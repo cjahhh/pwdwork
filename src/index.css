@@ -1,0 +1,73 @@
+/*
+  Global styles and design tokens for PWDWork.
+  Component-specific styles live in *.module.css files (CSS Modules).
+  Accessibility settings (high contrast, text size) will hook into these
+  CSS variables in Phase 3.
+*/
+
+:root {
+  --color-primary: #0b5cab;
+  --color-primary-hover: #084a8a;
+  --color-primary-text: #ffffff;
+  --color-text: #1a1a1a;
+  --color-text-muted: #3d4a5c;
+  --color-bg: #f4f7fb;
+  --color-surface: #ffffff;
+  --color-border: #c5d0de;
+  --color-focus: #0b5cab;
+  --font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-size-base: 1rem;
+  --line-height: 1.5;
+  --space-xs: 0.5rem;
+  --space-sm: 0.75rem;
+  --space-md: 1rem;
+  --space-lg: 1.5rem;
+  --space-xl: 2.5rem;
+  --touch-min: 2.75rem; /* 44px minimum touch target */
+  --radius: 0.5rem;
+  --max-width: 72rem;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  font-size: var(--font-size-base);
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-family);
+  line-height: var(--line-height);
+  color: var(--color-text);
+  background: var(--color-bg);
+}
+
+#root {
+  min-height: 100vh;
+}
+
+img {
+  max-width: 100%;
+  height: auto;
+}
+
+a {
+  color: var(--color-primary);
+}
+
+/* Visible keyboard focus — do not remove */
+:focus-visible {
+  outline: 3px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
