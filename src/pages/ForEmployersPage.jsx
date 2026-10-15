@@ -1,11 +1,26 @@
-import PlaceholderPage from "../components/PlaceholderPage.jsx";
+import EmployerCta from "../components/sections/EmployerCta.jsx";
+import ImpactStats from "../components/sections/ImpactStats.jsx";
 
 function ForEmployersPage() {
   return (
-    <PlaceholderPage
-      title="Are you an inclusive employer?"
-      description="For Employers placeholder. Hero buttons (Post a Job Opening, Learn About PWDWork) will be added in Phase 4."
-    />
+    <main>
+      <section className="bg-gradient-to-b from-blue-50/60 via-white to-white py-16 border-b border-gray-200">
+        <div className="max-w-4xl mx-auto px-6 lg:px-12">
+          <span className="inline-block bg-brand-teal-light border border-brand-teal/20 text-brand-teal px-4 py-2 rounded-full font-bold text-sm">
+            Inclusive hiring for certified employers
+          </span>
+          <h1 className="mt-6 text-4xl sm:text-5xl font-black text-brand-dark tracking-tight">
+            Hire talent with accessibility built in.
+          </h1>
+          <p className="mt-4 text-xl text-gray-700 font-medium leading-relaxed">
+            Post roles with verified accommodations, review applicants who already disclosed workstation needs, and
+            keep hiring conversations accessible from first contact to onboarding.
+          </p>
+        </div>
+      </section>
+      <EmployerCta />
+      <ImpactStats />
+    </main>
   );
 }
 

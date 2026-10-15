@@ -14,7 +14,10 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
-        // Role middleware (role:applicant, role:employer, role:admin) comes in the auth phase.
+        $middleware->alias([
+            'role' => \App\Http\Middleware\EnsureUserRole::class,
+        ]);
+
         $middleware->redirectGuestsTo(function (Request $request) {
             if ($request->is('api/*')) {
                 return null;

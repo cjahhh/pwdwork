@@ -1,20 +1,27 @@
 import { Outlet } from "react-router-dom";
+import { useUi } from "../context/UiContext.jsx";
+import AccessibilityBar from "./AccessibilityBar.jsx";
 import Navbar from "./Navbar.jsx";
 import Footer from "./Footer.jsx";
-import styles from "./Layout.module.css";
+import Toast from "./Toast.jsx";
+import Modal from "./Modal.jsx";
 
-/**
- * Shared page chrome: header (navbar), main content, footer.
- * Child routes render inside <Outlet /> (React Router).
- */
 function Layout() {
+  const { announcement } = useUi();
+
   return (
-    <div className={styles.shell}>
+    <div className="min-h-screen flex flex-col bg-white text-brand-dark antialiased selection:bg-brand-yellow selection:text-brand-dark">
+      <div className="sr-only" aria-live="polite">
+        {announcement}
+      </div>
+      <AccessibilityBar />
       <Navbar />
-      <div className={styles.content}>
+      <div className="flex-1">
         <Outlet />
       </div>
       <Footer />
+      <Toast />
+      <Modal />
     </div>
   );
 }
