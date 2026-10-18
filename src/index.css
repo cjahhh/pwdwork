@@ -1,0 +1,198 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+
+  --color-brand-blue: #1e3a8a;
+  --color-brand-blue-dark: #172554;
+  --color-brand-blue-light: #eff6ff;
+  --color-brand-teal: #0f766e;
+  --color-brand-teal-hover: #115e59;
+  --color-brand-teal-light: #f0fdf4;
+  --color-brand-yellow: #facc15;
+  --color-brand-yellow-hover: #eab308;
+  --color-brand-dark: #111827;
+  --color-brand-gray-bg: #f3f4f6;
+  --color-brand-card-border: #e5e7eb;
+
+  --shadow-soft-lg: 0 10px 25px -5px rgba(30, 58, 138, 0.08),
+    0 8px 10px -6px rgba(0, 0, 0, 0.04);
+  --shadow-soft-xl: 0 20px 30px -10px rgba(15, 118, 110, 0.12),
+    0 10px 15px -5px rgba(0, 0, 0, 0.04);
+  --shadow-glow-yellow: 0 0 20px rgba(250, 204, 21, 0.4);
+}
+
+html {
+  font-size: 18px;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  line-height: 1.6;
+  color: #111827;
+  background-color: #ffffff;
+  transition: font-size 0.2s ease, background-color 0.2s ease, color 0.2s ease;
+}
+
+html.reduced-motion *,
+html.reduced-motion *::before,
+html.reduced-motion *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  scroll-behavior: auto !important;
+  transition-duration: 0.01ms !important;
+}
+
+html.dyslexia-font body,
+html.dyslexia-font button,
+html.dyslexia-font input,
+html.dyslexia-font textarea,
+html.dyslexia-font select {
+  font-family: Arial, Verdana, sans-serif !important;
+  letter-spacing: 0.035em;
+  word-spacing: 0.08em;
+}
+
+html.large-cursor,
+html.large-cursor body,
+html.large-cursor button,
+html.large-cursor a,
+html.large-cursor input,
+html.large-cursor select,
+html.large-cursor textarea {
+  cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 32 32'%3E%3Cpath d='M4 2l22 14-10 2 5 10-4 2-5-10-7 7z' fill='white' stroke='black' stroke-width='2'/%3E%3C/svg%3E"), auto !important;
+}
+
+html.font-size-large {
+  font-size: 20px;
+}
+
+html.font-size-xlarge {
+  font-size: 22px;
+}
+
+*:focus-visible {
+  outline: 4px solid #facc15 !important;
+  outline-offset: 3px !important;
+  border-radius: 6px !important;
+}
+
+@keyframes floatSlow {
+  0%,
+  100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-8px);
+  }
+}
+
+.animate-float {
+  animation: floatSlow 6s ease-in-out infinite;
+}
+
+html.high-contrast,
+html.high-contrast body {
+  background-color: #000000 !important;
+  color: #ffffff !important;
+}
+
+html.high-contrast .bg-white,
+html.high-contrast .bg-brand-gray-bg,
+html.high-contrast .bg-gray-50,
+html.high-contrast .bg-blue-50,
+html.high-contrast .bg-teal-50,
+html.high-contrast .bg-yellow-50,
+html.high-contrast .bg-brand-teal-light,
+html.high-contrast .bg-brand-blue-light {
+  background-color: #121212 !important;
+  color: #ffffff !important;
+  border-color: #444444 !important;
+}
+
+html.high-contrast .text-brand-dark,
+html.high-contrast .text-gray-700,
+html.high-contrast .text-gray-600,
+html.high-contrast .text-gray-500 {
+  color: #ffffff !important;
+}
+
+html.high-contrast .bg-brand-blue {
+  background-color: #0f172a !important;
+  border: 2px solid #ffffff !important;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+.form-label {
+  display: block;
+  margin-bottom: 0.35rem;
+  color: #0f766e;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.form-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.75rem 1rem;
+  border: 2px solid #e5e7eb;
+  border-radius: 0.75rem;
+  background: #f9fafb;
+  color: #111827;
+  font: inherit;
+  font-size: 0.95rem;
+}
+
+.form-input:focus {
+  border-color: #1e3a8a;
+  background: #ffffff;
+  outline: none;
+}
+
+html.dark-mode,
+html.dark-mode body {
+  background-color: #111827;
+  color: #f9fafb;
+}
+
+html.dark-mode header,
+html.dark-mode .bg-white {
+  background-color: #1f2937 !important;
+  color: #f9fafb;
+}
+
+html.dark-mode .bg-brand-gray-bg {
+  background-color: #111827 !important;
+}
+
+html.dark-mode .text-brand-dark,
+html.dark-mode .text-gray-700,
+html.dark-mode .text-gray-600,
+html.dark-mode .text-gray-500 {
+  color: #e5e7eb !important;
+}
+
+html.dark-mode .border-gray-100,
+html.dark-mode .border-gray-200,
+html.dark-mode .border-gray-300 {
+  border-color: #374151 !important;
+}
+
+html.dark-mode .bg-gray-50,
+html.dark-mode .form-input {
+  background-color: #111827 !important;
+  border-color: #4b5563;
+  color: #f9fafb;
+}
+
+html.dark-mode .bg-blue-50,
+html.dark-mode .bg-teal-50 {
+  background-color: #243447 !important;
+  border-color: #375a70 !important;
+}
