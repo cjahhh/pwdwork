@@ -19,10 +19,10 @@ class PwdWorkSeeder extends Seeder
         $accommodations = collect([
             ['slug' => 'remote', 'label' => 'Remote', 'icon' => '🌐'],
             ['slug' => 'onsite', 'label' => 'Onsite', 'icon' => '🏢'],
-            ['slug' => 'wheelchair-access', 'label' => 'Wheelchair Access', 'icon' => '♿'],
+            ['slug' => 'wheelchair-access', 'label' => 'Step-free or wheelchair-accessible entrance', 'icon' => '♿'],
             ['slug' => 'flexible-hours', 'label' => 'Flexible Hours', 'icon' => '⏰'],
-            ['slug' => 'sign-language-support', 'label' => 'Sign Language Support', 'icon' => '🤟'],
-            ['slug' => 'screen-reader-optimized', 'label' => 'Screen Reader Optimized', 'icon' => '🎧'],
+            ['slug' => 'sign-language-support', 'label' => 'Sign-language interpretation', 'icon' => '🤟'],
+            ['slug' => 'screen-reader-optimized', 'label' => 'Assistive technology support', 'icon' => '🎧'],
         ])->mapWithKeys(function (array $row) {
             $model = Accommodation::query()->updateOrCreate(
                 ['slug' => $row['slug']],
@@ -32,7 +32,7 @@ class PwdWorkSeeder extends Seeder
             return [$row['label'] => $model];
         });
 
-        $admin = User::query()->updateOrCreate(
+        $admin = User::query()->firstOrCreate(
             ['email' => 'admin@pwdwork.org'],
             [
                 'name' => 'PWDWork Admin',
@@ -43,7 +43,7 @@ class PwdWorkSeeder extends Seeder
             ]
         );
 
-        $applicant = User::query()->updateOrCreate(
+        $applicant = User::query()->firstOrCreate(
             ['email' => 'applicant@pwdwork.org'],
             [
                 'name' => 'Jordan Cruz',
@@ -67,14 +67,14 @@ class PwdWorkSeeder extends Seeder
         $profile->accommodations()->sync([
             $accommodations['Remote']->id,
             $accommodations['Flexible Hours']->id,
-            $accommodations['Screen Reader Optimized']->id,
+            $accommodations['Assistive technology support']->id,
         ]);
 
         $companies = [
             [
                 'email' => 'inclusive@pwdwork.org',
                 'name' => 'Alex Rivera',
-                'company_name' => 'InclusiveTech Labs',
+                'company_name' => 'CareDirect Hub',
                 'company_logo' => 'IT',
                 'company_color' => 'bg-blue-600',
                 'location' => 'Remote (Global)',
@@ -83,7 +83,7 @@ class PwdWorkSeeder extends Seeder
             [
                 'email' => 'abledev@pwdwork.org',
                 'name' => 'Sam Ortega',
-                'company_name' => 'AbleDev Solutions',
+                'company_name' => 'Mabuhay Distribution',
                 'company_logo' => 'AD',
                 'company_color' => 'bg-teal-600',
                 'location' => 'Remote (PH & Asia)',
@@ -92,7 +92,7 @@ class PwdWorkSeeder extends Seeder
             [
                 'email' => 'caredirect@pwdwork.org',
                 'name' => 'Mia Santos',
-                'company_name' => 'CareDirect Hub',
+                'company_name' => 'Good Grain Bakery',
                 'company_logo' => 'CD',
                 'company_color' => 'bg-indigo-600',
                 'location' => 'Metro Manila',
@@ -101,7 +101,7 @@ class PwdWorkSeeder extends Seeder
             [
                 'email' => 'equaldata@pwdwork.org',
                 'name' => 'Noah Reyes',
-                'company_name' => 'EqualData Inc.',
+                'company_name' => 'Community Health Center',
                 'company_logo' => 'ED',
                 'company_color' => 'bg-emerald-600',
                 'location' => 'Remote (Global)',
@@ -110,7 +110,7 @@ class PwdWorkSeeder extends Seeder
             [
                 'email' => 'horizon@pwdwork.org',
                 'name' => 'Leah Tan',
-                'company_name' => 'Horizon Media',
+                'company_name' => 'Everyday Market',
                 'company_logo' => 'HM',
                 'company_color' => 'bg-purple-600',
                 'location' => 'Cebu City',
@@ -119,7 +119,7 @@ class PwdWorkSeeder extends Seeder
             [
                 'email' => 'openaccess@pwdwork.org',
                 'name' => 'Chris Lim',
-                'company_name' => 'OpenAccess Labs',
+                'company_name' => 'GreenPath Cooperative',
                 'company_logo' => 'OA',
                 'company_color' => 'bg-sky-600',
                 'location' => 'Remote',
@@ -129,7 +129,7 @@ class PwdWorkSeeder extends Seeder
 
         $employers = [];
         foreach ($companies as $company) {
-            $user = User::query()->updateOrCreate(
+            $user = User::query()->firstOrCreate(
                 ['email' => $company['email']],
                 [
                     'name' => $company['name'],
@@ -148,65 +148,65 @@ class PwdWorkSeeder extends Seeder
                     'company_color' => $company['company_color'],
                     'location' => $company['location'],
                     'description' => $company['description'],
-                    'verification_status' => 'verified',
+                    'verification_status' => 'pending',
                 ]
             );
         }
 
         $listings = [
             [
-                'company' => 'InclusiveTech Labs',
-                'title' => 'Senior UX/UI Accessibility Designer',
-                'location' => 'Remote (Global)',
-                'employment_type' => 'Full Time',
-                'work_mode' => 'Remote',
-                'description' => 'Lead the design of inclusive web applications adhering strictly to WCAG 2.1 AAA standards. Collaborate with user researchers with lived disability experience.',
-                'perks' => ['Remote', 'Wheelchair Access', 'Screen Reader Optimized', 'Flexible Hours'],
-            ],
-            [
-                'company' => 'AbleDev Solutions',
-                'title' => 'Frontend Developer (Accessibility)',
-                'location' => 'Remote (PH & Asia)',
-                'employment_type' => 'Full Time',
-                'work_mode' => 'Remote',
-                'description' => 'Build semantic, ARIA-compliant component libraries. Work alongside sign language interpreters and team members using voice interface tools.',
-                'perks' => ['Remote', 'Flexible Hours', 'Sign Language Support'],
-            ],
-            [
                 'company' => 'CareDirect Hub',
-                'title' => 'Customer Support Specialist',
-                'location' => 'Metro Manila / Onsite',
+                'title' => 'Customer Service Representative',
+                'location' => 'Remote or Metro Manila',
                 'employment_type' => 'Full Time',
-                'work_mode' => 'Onsite',
-                'description' => 'Handle incoming customer inquiries via live chat, email, and video calls. Fully equipped campus with tactile paving and wheelchair ramps.',
-                'perks' => ['Onsite', 'Wheelchair Access', 'Sign Language Support'],
-            ],
-            [
-                'company' => 'EqualData Inc.',
-                'title' => 'Data Analyst',
-                'location' => 'Remote (Global)',
-                'employment_type' => 'Part Time',
                 'work_mode' => 'Remote',
-                'description' => 'Analyze workforce inclusion metrics and construct accessible dashboards using screen-reader friendly data visualization frameworks.',
+                'description' => 'Answer customer questions by phone, chat, or email and help resolve everyday service concerns. Training and scripts are provided.',
                 'perks' => ['Remote', 'Flexible Hours', 'Screen Reader Optimized'],
             ],
             [
-                'company' => 'Horizon Media',
-                'title' => 'Content Specialist',
-                'location' => 'Cebu City / Onsite',
-                'employment_type' => 'Full Time',
+                'company' => 'Mabuhay Distribution',
+                'title' => 'Warehouse Inventory Assistant',
+                'location' => 'Quezon City / Onsite',
+                'employment_type' => 'Part Time',
                 'work_mode' => 'Onsite',
-                'description' => 'Write clear, plain-language text and craft comprehensive alt-text captions for digital educational campaigns.',
+                'description' => 'Count and label incoming goods, update simple inventory sheets, and prepare small orders. Seated and light-duty tasks are available.',
                 'perks' => ['Onsite', 'Wheelchair Access', 'Flexible Hours'],
             ],
             [
-                'company' => 'OpenAccess Labs',
-                'title' => 'Software QA Engineer',
-                'location' => 'Remote',
+                'company' => 'Good Grain Bakery',
+                'title' => 'Bakery Production Assistant',
+                'location' => 'Pasig City / Onsite',
+                'employment_type' => 'Part Time',
+                'work_mode' => 'Onsite',
+                'description' => 'Pack baked goods, place labels, and keep the work area organized. Tasks can be adjusted for seated work and shorter shifts.',
+                'perks' => ['Onsite', 'Wheelchair Access', 'Flexible Hours'],
+            ],
+            [
+                'company' => 'Community Health Center',
+                'title' => 'Receptionist and Records Clerk',
+                'location' => 'Cebu City / Onsite',
+                'employment_type' => 'Full Time',
+                'work_mode' => 'Onsite',
+                'description' => 'Welcome visitors, answer calls, organize appointment records, and enter basic information. A quiet desk and accessible workstation are provided.',
+                'perks' => ['Onsite', 'Wheelchair Access', 'Flexible Hours'],
+            ],
+            [
+                'company' => 'Everyday Market',
+                'title' => 'Retail Stock and Checkout Assistant',
+                'location' => 'Davao City / Onsite',
+                'employment_type' => 'Part Time',
+                'work_mode' => 'Onsite',
+                'description' => 'Restock light products, keep shelves tidy, and assist customers at the checkout counter. Flexible shifts and an accessible entrance are available.',
+                'perks' => ['Onsite', 'Wheelchair Access', 'Flexible Hours'],
+            ],
+            [
+                'company' => 'GreenPath Cooperative',
+                'title' => 'Community Garden Assistant',
+                'location' => 'Antipolo / Onsite',
                 'employment_type' => 'Contract',
-                'work_mode' => 'Remote',
-                'description' => 'Perform automated and manual accessibility testing across assistive technology screen readers, switch devices, and eye-tracking software.',
-                'perks' => ['Remote', 'Sign Language Support', 'Wheelchair Access'],
+                'work_mode' => 'Onsite',
+                'description' => 'Help water plants, sort seeds, prepare produce boxes, and maintain garden paths. Adaptive tools and task coaching are available.',
+                'perks' => ['Onsite', 'Flexible Hours', 'Wheelchair Access'],
             ],
         ];
 
@@ -223,11 +223,14 @@ class PwdWorkSeeder extends Seeder
                     'work_mode' => $listing['work_mode'],
                     'description' => $listing['description'],
                     'status' => 'open',
+                    'flexible_schedule' => in_array('Flexible Hours', $listing['perks'], true),
                 ]
             );
 
             $job->accommodations()->sync(
-                collect($listing['perks'])->map(fn (string $label) => $accommodations[$label]->id)->all()
+                collect($listing['perks'])->reject(fn ($label) => in_array($label, ['Remote', 'Onsite', 'Flexible Hours'], true))->map(fn ($label) => match ($label) {
+                    'Wheelchair Access' => 'Step-free or wheelchair-accessible entrance', 'Screen Reader Optimized' => 'Assistive technology support', 'Sign Language Support' => 'Sign-language interpretation', default => $label
+                })->map(fn ($label) => $accommodations[$label]->id)->all()
             );
 
             $firstListing ??= $job;

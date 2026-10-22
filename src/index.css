@@ -196,3 +196,33 @@ html.dark-mode .bg-teal-50 {
   background-color: #243447 !important;
   border-color: #375a70 !important;
 }
+
+/* Accessible defaults apply independently of optional presentation settings. */
+:focus-visible { outline: 3px solid #1d4ed8 !important; box-shadow: 0 0 0 6px #fff !important; outline-offset: 3px !important; }
+html.font-size-large { font-size: 115%; }
+html.font-size-xlarge { font-size: 130%; }
+html { font-size: 100%; scroll-padding-top: 7rem; }
+button, input, select, textarea, summary, a { touch-action: manipulation; }
+button, summary { cursor: pointer; }
+button, input:not([type=checkbox]), select, summary { min-height: 2.75rem; }
+button:disabled { opacity: .65; cursor: wait; }
+.page-shell { width: min(100%, 72rem); margin: auto; padding: 2rem 1.25rem; overflow-wrap: anywhere; }
+.page-shell h1 { font-size: 2rem; font-weight: 800; margin-bottom: 1rem; }
+.page-shell h2, legend { font-size: 1.15rem; font-weight: 750; }
+.panel { background: #fff; border: 1px solid #cbd5e1; border-radius: 1rem; padding: 1.5rem; margin-block: 1rem; min-width: 0; }
+.primary-button { background: #1e3a8a; color: #fff; border-radius: .65rem; padding: .7rem 1.25rem; font-weight: 750; }
+.filter-option { display: flex; gap: .75rem; align-items: center; padding-block: .5rem; min-height: 2.75rem; }
+.filter-option input { width: 1.2rem; height: 1.2rem; flex-shrink: 0; }
+.skip-link { position: fixed; top: -10rem; left: 1rem; z-index: 100; background: #fff; color: #172554; padding: 1rem; font-weight: bold; }
+.skip-link:focus { top: .5rem; }
+dialog::backdrop { background: #000a; }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; } }
+html.dark-mode .panel, html.dark-mode dialog { background: #1f2937; color: #f9fafb; }
+html.dark-mode .text-brand-blue, html.dark-mode .text-brand-teal, html.dark-mode .form-label { color: #93e6df; }
+html.dark-mode .bg-brand-teal-light, html.dark-mode .bg-gray-100, html.dark-mode .bg-gray-200 { background: #243447; color: #f9fafb; }
+html.high-contrast body, html.high-contrast .panel, html.high-contrast dialog, html.high-contrast input, html.high-contrast textarea, html.high-contrast select, html.high-contrast [class*="bg-"] { background: #000 !important; color: #fff !important; border-color: #fff !important; background-image: none !important; }
+html.high-contrast [class*="text-"], html.high-contrast .form-label { color: #fff !important; }
+html.high-contrast a { text-decoration: underline; }
+html.high-contrast button { border: 2px solid #fff !important; }
+html.high-contrast :focus-visible { outline-color: #ffea00 !important; box-shadow: 0 0 0 6px #000 !important; }
+@media (max-width: 48rem) { header.sticky { position: relative; } }

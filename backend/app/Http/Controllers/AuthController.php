@@ -7,6 +7,8 @@ use App\Models\Employer;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -15,6 +17,7 @@ class AuthController extends Controller
 {
     public function register(Request $request): JsonResponse
     {
+        abort_unless($request->hasSession(), 400, 'Use the configured first-party frontend origin.');
         $data = $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'email', 'max:255', 'unique:users,email'],
@@ -23,38 +26,44 @@ class AuthController extends Controller
             'company_name' => ['required_if:role,employer', 'nullable', 'string', 'max:255'],
         ]);
 
-        $user = User::query()->create([
-            'name' => $data['name'],
-            'email' => $data['email'],
-            'password' => $data['password'],
-            'role' => $data['role'],
-            'status' => 'active',
-            'email_verified_at' => now(),
-        ]);
-
-        if ($user->role === 'applicant') {
-            ApplicantProfile::query()->create([
-                'user_id' => $user->id,
+        $user = DB::transaction(function () use ($data) {
+            $user = User::query()->create([
+                'name' => $data['name'],
+                'email' => $data['email'],
+                'password' => $data['password'],
+                'role' => $data['role'],
+                'status' => 'active',
+                'email_verified_at' => now(),
             ]);
-        }
 
-        if ($user->role === 'employer') {
-            Employer::query()->create([
-                'user_id' => $user->id,
-                'company_name' => $data['company_name'] ?: $data['name'],
-                'verification_status' => 'pending',
-            ]);
-        }
+            if ($user->role === 'applicant') {
+                ApplicantProfile::query()->create([
+                    'user_id' => $user->id,
+                ]);
+            }
+
+            if ($user->role === 'employer') {
+                Employer::query()->create([
+                    'user_id' => $user->id,
+                    'company_name' => $data['company_name'] ?: $data['name'],
+                    'verification_status' => 'pending',
+                ]);
+            }
+
+            return $user;
+        });
+        Auth::login($user);
+        $request->session()->regenerate();
 
         return response()->json([
             'message' => 'Account created.',
             'user' => $this->userPayload($user),
-            'token' => $user->createToken('auth')->plainTextToken,
         ], 201);
     }
 
     public function login(Request $request): JsonResponse
     {
+        abort_unless($request->hasSession(), 400, 'Use the configured first-party frontend origin.');
         $credentials = $request->validate([
             'email' => ['required', 'email'],
             'password' => ['required', 'string'],
@@ -74,18 +83,25 @@ class AuthController extends Controller
             ], 403);
         }
 
-        $user->tokens()->where('name', 'auth')->delete();
+        Auth::login($user);
+        $request->session()->regenerate();
 
         return response()->json([
             'message' => 'Logged in.',
             'user' => $this->userPayload($user),
-            'token' => $user->createToken('auth')->plainTextToken,
         ]);
     }
 
     public function logout(Request $request): JsonResponse
     {
-        $request->user()?->currentAccessToken()?->delete();
+        if ($request->bearerToken()) {
+            $request->user()->currentAccessToken()?->delete();
+        }
+        if ($request->hasSession()) {
+            Auth::guard('web')->logout();
+            $request->session()->invalidate();
+            $request->session()->regenerateToken();
+        }
 
         return response()->json([
             'message' => 'Logged out.',

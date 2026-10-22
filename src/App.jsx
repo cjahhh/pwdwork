@@ -8,15 +8,13 @@ import ForEmployersPage from "./pages/ForEmployersPage.jsx";
 import AboutPage from "./pages/AboutPage.jsx";
 import LoginPage from "./pages/LoginPage.jsx";
 import RegisterPage from "./pages/RegisterPage.jsx";
+import PasswordRecoveryPage from "./pages/PasswordRecoveryPage.jsx";
 import ForgotPasswordPage from "./pages/ForgotPasswordPage.jsx";
 import ApplicantProfilePage from "./pages/ApplicantProfilePage.jsx";
-import ApplicantApplicationsPage from "./pages/ApplicantApplicationsPage.jsx";
 import ApplicantApplicationsEnhancedPage from "./pages/ApplicantApplicationsEnhancedPage.jsx";
 import ApplicantSavedJobsPage from "./pages/ApplicantSavedJobsPage.jsx";
 import EmployerProfilePage from "./pages/EmployerProfilePage.jsx";
-import EmployerListingsPage from "./pages/EmployerListingsPage.jsx";
 import EmployerListingsEnhancedPage from "./pages/EmployerListingsEnhancedPage.jsx";
-import EmployerApplicantsPage from "./pages/EmployerApplicantsPage.jsx";
 import EmployerApplicantsEnhancedPage from "./pages/EmployerApplicantsEnhancedPage.jsx";
 import AdminDashboardPage from "./pages/AdminDashboardPage.jsx";
 import NotFoundPage from "./pages/NotFoundPage.jsx";
@@ -36,6 +34,7 @@ function App() {
         <Route path="/about" element={<AboutPage />} />
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
+        <Route path="/reset-password" element={<PasswordRecoveryPage reset />} />
         <Route path="/forgot-password" element={<ForgotPasswordPage />} />
 
         <Route

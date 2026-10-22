@@ -7,12 +7,14 @@ use App\Models\Application;
 use App\Models\JobListing;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 
 class JobListingController extends Controller
 {
     public function index(Request $request): JsonResponse
     {
+        $request->validate(['query' => ['nullable', 'string', 'max:255'], 'location' => ['nullable', 'string', 'max:255']]);
         $query = JobListing::query()->with(['employer', 'accommodations'])->where('status', 'open');
 
         if ($request->filled('query')) {
@@ -25,10 +27,28 @@ class JobListingController extends Controller
         }
 
         if ($request->filled('location')) {
-            $query->where('location', 'like', '%' . $request->string('location')->toString() . '%');
+            $query->where('location', 'like', '%'.$request->string('location')->toString().'%');
         }
 
-        $jobs = $query->latest()->get()->unique(fn (JobListing $job) => $this->jobFingerprint($job));
+        $filters = $request->validate([
+            'modes' => ['array', 'max:3'], 'modes.*' => [Rule::in(['Remote', 'Onsite', 'Hybrid'])],
+            'types' => ['array', 'max:2'], 'types.*' => [Rule::in(['Full Time', 'Part Time'])],
+            'flexible' => ['sometimes', 'boolean'], 'accommodations' => ['array', 'max:6'],
+            'accommodations.*' => [Rule::in(['Step-free or wheelchair-accessible entrance', 'Accessible restroom', 'Assistive technology support', 'Sign-language interpretation', 'Accessible interview options', 'Adjustable workspace'])],
+        ]);
+        if (! empty($filters['modes'])) {
+            $query->whereIn('work_mode', $filters['modes']);
+        }
+        if (! empty($filters['types'])) {
+            $query->whereIn('employment_type', $filters['types']);
+        }
+        if (! empty($filters['flexible'])) {
+            $query->where('flexible_schedule', true);
+        }
+        foreach ($filters['accommodations'] ?? [] as $label) {
+            $query->whereHas('accommodations', fn ($q) => $q->where('label', $label));
+        }
+        $jobs = $query->latest()->get();
 
         return response()->json(['jobs' => $jobs->map(fn (JobListing $job) => $this->jobPayload($job))->values()]);
     }
@@ -36,6 +56,7 @@ class JobListingController extends Controller
     public function show(JobListing $jobListing): JsonResponse
     {
         abort_unless($jobListing->status === 'open', 404);
+
         return response()->json(['job' => $this->jobPayload($jobListing->load(['employer', 'accommodations']))]);
     }
 
@@ -44,24 +65,22 @@ class JobListingController extends Controller
         $data = $request->validate([
             'title' => ['required', 'string', 'max:255'],
             'location' => ['required', 'string', 'max:255'],
-            'employment_type' => ['required', 'string', 'max:32'],
+            'employment_type' => ['required', Rule::in(['Full Time', 'Part Time', 'Contract'])],
             'work_mode' => ['required', Rule::in(['Remote', 'Hybrid', 'Onsite'])],
-            'description' => ['required', 'string'],
+            'description' => ['required', 'string', 'max:10000'],
             'accommodations' => ['array'],
-            'accommodations.*' => ['string', 'max:255'],
+            'accommodations.*' => [Rule::in(['Step-free or wheelchair-accessible entrance', 'Accessible restroom', 'Assistive technology support', 'Sign-language interpretation', 'Accessible interview options', 'Adjustable workspace'])],
+            'flexible_schedule' => ['sometimes', 'boolean'],
         ]);
 
-        $job = $request->user()->employer->jobListings()->firstOrCreate([
-            'title' => $data['title'],
-            'location' => $data['location'],
-            'employment_type' => $data['employment_type'],
-            'work_mode' => $data['work_mode'],
-            'description' => $data['description'],
-        ], [
-            'status' => 'open',
-        ]);
+        $job = DB::transaction(function () use ($request, $data) {
+            $labels = $data['accommodations'] ?? [];
+            unset($data['accommodations']);
+            $job = $request->user()->employer->jobListings()->create([...$data, 'status' => 'open']);
+            $this->syncAccommodations($job, $labels);
 
-        $this->syncAccommodations($job, $data['accommodations'] ?? []);
+            return $job;
+        });
 
         return response()->json(['job' => $this->jobPayload($job->load(['employer', 'accommodations']))], 201);
     }
@@ -71,8 +90,8 @@ class JobListingController extends Controller
         $jobs = $request->user()->employer->jobListings()
             ->with(['employer', 'accommodations'])
             ->latest()
-            ->get()
-            ->unique(fn (JobListing $job) => $this->jobFingerprint($job));
+            ->get();
+
         return response()->json(['jobs' => $jobs->map(fn (JobListing $job) => $this->jobPayload($job))->values()]);
     }
 
@@ -82,22 +101,36 @@ class JobListingController extends Controller
         $data = $request->validate([
             'title' => ['sometimes', 'required', 'string', 'max:255'],
             'location' => ['sometimes', 'required', 'string', 'max:255'],
-            'employment_type' => ['sometimes', 'required', 'string', 'max:32'],
+            'employment_type' => ['sometimes', 'required', Rule::in(['Full Time', 'Part Time', 'Contract'])],
             'work_mode' => ['sometimes', 'required', Rule::in(['Remote', 'Hybrid', 'Onsite'])],
-            'description' => ['sometimes', 'required', 'string'],
+            'description' => ['sometimes', 'required', 'string', 'max:10000'],
             'status' => ['sometimes', 'required', Rule::in(['open', 'closed'])],
+            'accommodations' => ['sometimes', 'array', 'max:6'],
+            'accommodations.*' => [Rule::in(['Step-free or wheelchair-accessible entrance', 'Accessible restroom', 'Assistive technology support', 'Sign-language interpretation', 'Accessible interview options', 'Adjustable workspace'])],
+            'flexible_schedule' => ['sometimes', 'boolean'],
         ]);
-        $jobListing->update($data);
+        $labels = $data['accommodations'] ?? null;
+        unset($data['accommodations']);
+        DB::transaction(function () use ($jobListing, $data, $labels) {
+            $jobListing->update($data);
+            if ($labels !== null) {
+                $this->syncAccommodations($jobListing, $labels);
+            }
+        });
+
         return response()->json(['job' => $this->jobPayload($jobListing->load(['employer', 'accommodations']))]);
     }
 
     public function apply(Request $request, JobListing $jobListing): JsonResponse
     {
         abort_unless($request->user()->isApplicant(), 403);
+        abort_unless($jobListing->status === 'open', 422, 'This job is no longer accepting applications.');
+        $request->validate(['cover_letter' => ['nullable', 'string', 'max:10000']]);
         $application = Application::query()->firstOrCreate(
             ['user_id' => $request->user()->id, 'job_listing_id' => $jobListing->id],
             ['cover_letter' => $request->input('cover_letter'), 'status' => 'submitted']
         );
+
         return response()->json(['application' => $application], $application->wasRecentlyCreated ? 201 : 200);
     }
 
@@ -108,11 +141,6 @@ class JobListingController extends Controller
             ->whereHas('jobListing', fn ($query) => $query->where('employer_id', $request->user()->employer->id))
             ->latest()
             ->get()
-            ->unique(fn (Application $application) => implode('|', [
-                $application->user_id,
-                strtolower(trim((string) $application->jobListing?->title)),
-                strtolower(trim((string) $request->user()->employer->company_name)),
-            ]))
             ->map(fn (Application $application) => [
                 'id' => $application->id,
                 'name' => $application->user->name,
@@ -144,11 +172,17 @@ class JobListingController extends Controller
         abort_unless($application->jobListing->employer_id === $request->user()->employer->id, 403);
         $data = $request->validate([
             'status' => ['required', Rule::in(['submitted', 'reviewing', 'interview', 'hired', 'rejected'])],
-            'interview_date' => ['nullable', 'date'],
-            'interview_time' => ['nullable', 'date_format:H:i'],
+            'interview_date' => ['required_if:status,interview', 'nullable', 'date_format:Y-m-d', 'after_or_equal:today'],
+            'interview_time' => ['required_if:status,interview', 'nullable', 'date_format:H:i'],
             'interview_notes' => ['nullable', 'string', 'max:2000'],
         ]);
+        if ($data['status'] !== 'interview') {
+            $data['interview_date'] = null;
+            $data['interview_time'] = null;
+            $data['interview_notes'] = null;
+        }
         $application->update($data);
+
         return response()->json(['application' => $application->fresh(['user', 'jobListing'])]);
     }
 
@@ -176,11 +210,32 @@ class JobListingController extends Controller
         return response()->json(['applications' => $applications->values()]);
     }
 
+    public function saved(Request $request): JsonResponse
+    {
+        $jobs = $request->user()->savedJobs()->with(['employer', 'accommodations'])->get();
+
+        return response()->json(['jobs' => $jobs->map(fn ($job) => $this->jobPayload($job))]);
+    }
+
+    public function saveJob(Request $request, JobListing $jobListing): JsonResponse
+    {
+        $request->user()->savedJobs()->syncWithoutDetaching([$jobListing->id]);
+
+        return response()->json(['message' => 'Job saved.']);
+    }
+
+    public function unsaveJob(Request $request, JobListing $jobListing): JsonResponse
+    {
+        $request->user()->savedJobs()->detach($jobListing->id);
+
+        return response()->json(['message' => 'Job removed.']);
+    }
+
     private function syncAccommodations(JobListing $job, array $labels): void
     {
         $ids = collect($labels)->map(fn (string $label) => Accommodation::query()->firstOrCreate(
-            ['label' => $label],
-            ['slug' => str($label)->slug(), 'icon' => '']
+            ['slug' => (string) str($label)->slug()],
+            ['label' => $label, 'icon' => '']
         )->id)->all();
         $job->accommodations()->sync($ids);
     }
@@ -210,6 +265,8 @@ class JobListingController extends Controller
             'location' => $job->location,
             'type' => $job->employment_type,
             'mode' => $job->work_mode,
+            'flexibleSchedule' => $job->flexible_schedule,
+            'accommodationsVerified' => false,
             'description' => $job->description,
             'status' => ucfirst($job->status),
             'accommodations' => $job->accommodations->map(fn ($accommodation) => ['label' => $accommodation->label, 'icon' => $accommodation->icon])->values(),

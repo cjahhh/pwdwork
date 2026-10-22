@@ -13,7 +13,7 @@ function ForEmployersPage() {
             Hire talent with accessibility built in.
           </h1>
           <p className="mt-4 text-xl text-gray-700 font-medium leading-relaxed">
-            Post roles with verified accommodations, review applicants who already disclosed workstation needs, and
+            Post roles with employer-reported accommodations, review applicants who already disclosed workstation needs, and
             keep hiring conversations accessible from first contact to onboarding.
           </p>
         </div>

@@ -3,7 +3,7 @@ import { useAuth } from "../context/AuthContext.jsx";
 import { dashboardPath } from "../services/auth.js";
 
 function ProtectedRoute({ children, allowedRoles }) {
-  const { user, ready } = useAuth();
+  const { user, ready, error, retry } = useAuth();
 
   if (!ready) {
     return (
@@ -12,6 +12,8 @@ function ProtectedRoute({ children, allowedRoles }) {
       </main>
     );
   }
+
+  if (error) return <main className="page-shell"><p role="alert">{error}</p><button onClick={retry}>Retry account loading</button></main>;
 
   if (!user) {
     return <Navigate to="/login" replace />;

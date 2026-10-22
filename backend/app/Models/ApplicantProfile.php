@@ -10,6 +10,8 @@ class ApplicantProfile extends Model
 {
     protected $fillable = [
         'user_id',
+        'headline',
+        'skills',
         'phone',
         'location',
         'preferred_work_mode',
@@ -17,6 +19,11 @@ class ApplicantProfile extends Model
         'resume_path',
         'pwd_id_number',
     ];
+
+    protected function casts(): array
+    {
+        return ['skills' => 'array'];
+    }
 
     public function user(): BelongsTo
     {

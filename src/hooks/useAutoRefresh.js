@@ -1,29 +1,4 @@
-import { useEffect, useRef } from "react";
-
-export function useAutoRefresh(fetcher, onData, interval = 10000) {
-  const fetcherRef = useRef(fetcher);
-  const onDataRef = useRef(onData);
-
-  fetcherRef.current = fetcher;
-  onDataRef.current = onData;
-
-  useEffect(() => {
-    let active = true;
-
-    async function refresh() {
-      try {
-        const data = await fetcherRef.current();
-        if (active) onDataRef.current(data);
-      } catch {
-        // Keep the current screen usable while the API is unavailable.
-      }
-    }
-
-    refresh();
-    const timer = window.setInterval(refresh, interval);
-    return () => {
-      active = false;
-      window.clearInterval(timer);
-    };
-  }, [interval]);
-}
+// Compatibility wrapper: failures are surfaced by the shared resource state.
+import {useEffect} from 'react';
+import {useResource} from './useResource.js';
+export function useAutoRefresh(fetcher,onData){const resource=useResource(fetcher);useEffect(()=>{if(resource.data!==null)onData(resource.data);},[resource.data,onData]);return resource;}

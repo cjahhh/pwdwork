@@ -1,70 +1,101 @@
-import { createContext, useContext, useEffect, useMemo, useState } from "react";
-import { fetchCurrentUser, loginAccount, logoutAccount, registerAccount } from "../services/auth.js";
-import { getStoredToken, setStoredToken } from "../services/api.js";
-
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  useCallback,
+  useRef,
+} from "react";
+import {
+  fetchCurrentUser,
+  loginAccount,
+  logoutAccount,
+  registerAccount,
+} from "../services/auth.js";
+import { apiErrorMessage } from "../services/api.js";
 const AuthContext = createContext(null);
-
 export function AuthProvider({ children }) {
-  const [user, setUser] = useState(null);
-  const [ready, setReady] = useState(false);
-
-  useEffect(() => {
-    async function restoreSession() {
-      if (!getStoredToken()) {
-        setReady(true);
-        return;
-      }
-
-      try {
-        const current = await fetchCurrentUser();
-        setUser(current);
-      } catch {
-        setStoredToken(null);
-        setUser(null);
-      } finally {
-        setReady(true);
-      }
+  const [user, setUser] = useState(null),
+    [ready, setReady] = useState(false),
+    [error, setError] = useState(""),
+    [notice, setNotice] = useState("");
+  const channel = useRef(null);
+  const restore = useCallback(async () => {
+    setReady(false);
+    setError("");
+    try {
+      setUser(await fetchCurrentUser());
+    } catch (e) {
+      if ([401, 419].includes(e.response?.status)) setUser(null);
+      else setError(apiErrorMessage(e));
+    } finally {
+      setReady(true);
     }
-
-    restoreSession();
   }, []);
-
+  useEffect(() => {
+    const expired = () => {
+      setUser(null);
+      setError("");
+      setNotice("Your session has expired. Please sign in again.");
+    };
+    window.addEventListener("pwdwork:unauthorized", expired);
+    if (window.BroadcastChannel) {
+      channel.current = new BroadcastChannel("pwdwork-session");
+      channel.current.onmessage = () => restore();
+    }
+    Promise.resolve().then(restore);
+    return () => {
+      window.removeEventListener("pwdwork:unauthorized", expired);
+      channel.current?.close();
+    };
+  }, [restore]);
   const value = useMemo(
     () => ({
       user,
       ready,
-      async register(payload) {
-        const data = await registerAccount(payload);
-        setStoredToken(data.token);
-        setUser(data.user);
-        return data.user;
-      },
+      error,
+      notice,
+      retry: restore,
       async login(payload) {
         const data = await loginAccount(payload);
-        setStoredToken(data.token);
+        setError("");
         setUser(data.user);
+        setNotice("");
+        channel.current?.postMessage("changed");
+        return data.user;
+      },
+      async register(payload) {
+        const data = await registerAccount(payload);
+        setError("");
+        setNotice("");
+        setUser(data.user);
+        channel.current?.postMessage("changed");
         return data.user;
       },
       async logout() {
         try {
           await logoutAccount();
-        } catch {
-          // Token may already be invalid; still clear local session.
+          setUser(null);
+          setNotice("");
+          channel.current?.postMessage("changed");
+        } catch (e) {
+          if ([401, 419].includes(e.response?.status)) {
+            setUser(null);
+            return;
+          }
+          setError(apiErrorMessage(e));
+          throw e;
         }
-        setStoredToken(null);
-        setUser(null);
       },
     }),
-    [user, ready],
+    [user, ready, error, notice, restore],
   );
-
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
-
+// oxlint-disable-next-line react/only-export-components
 export function useAuth() {
   const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error("useAuth must be used inside AuthProvider");
-  }
+  if (!context) throw new Error("AuthProvider is required");
   return context;
 }

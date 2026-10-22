@@ -71,7 +71,7 @@ function RegisterPage() {
                     value="applicant"
                     checked={role === "applicant"}
                     onChange={() => setRole("applicant")}
-                    className="sr-only"
+                    className="accent-brand-blue"
                   />
                   Jobseeker
                 </label>
@@ -124,6 +124,7 @@ function RegisterPage() {
               <input
                 id="register-email"
                 type="email"
+                autoComplete="email"
                 required
                 value={email}
                 onChange={(event) => setEmail(event.target.value)}
@@ -137,6 +138,7 @@ function RegisterPage() {
               <input
                 id="register-password"
                 type="password"
+                autoComplete="new-password"
                 required
                 minLength={8}
                 value={password}

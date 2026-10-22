@@ -12,7 +12,7 @@ function AboutPage() {
           <h1 className="text-4xl font-black text-brand-dark tracking-tight">Built for accessible employment.</h1>
           <p className="text-lg text-gray-700 leading-relaxed">
             PWDWork is a social-impact employment platform that connects persons with disabilities to employers who
-            publish clear, verified workplace accommodations. We align with UN SDG 8 (Decent Work) and SDG 10 (Reduced
+            publish clear, employer-reported workplace accommodations. We align with UN SDG 8 (Decent Work) and SDG 10 (Reduced
             Inequalities).
           </p>
         </div>

@@ -17,7 +17,13 @@ class JobListing extends Model
         'work_mode',
         'description',
         'status',
+        'flexible_schedule',
     ];
+
+    protected function casts(): array
+    {
+        return ['flexible_schedule' => 'boolean'];
+    }
 
     public function employer(): BelongsTo
     {

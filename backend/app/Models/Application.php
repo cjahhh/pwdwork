@@ -17,6 +17,11 @@ class Application extends Model
         'interview_notes',
     ];
 
+    protected function casts(): array
+    {
+        return ['interview_date' => 'date'];
+    }
+
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);

@@ -29,7 +29,7 @@ function JobCard({ job }) {
 
         <div className="mt-5 pt-4 border-t border-gray-100">
           <p className="text-xs font-extrabold uppercase tracking-wider text-brand-teal mb-2">
-            Verified Accessibility Perks:
+            Employer-reported support:
           </p>
           <div className="flex flex-wrap gap-2">
             {job.accommodations.map((acc) => (

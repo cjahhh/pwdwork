@@ -1,47 +1,48 @@
 import axios from "axios";
-
-const TOKEN_KEY = "pwdwork_token";
-
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL || "/api",
-  headers: {
-    "Content-Type": "application/json",
-    Accept: "application/json",
+  withCredentials: true,
+  withXSRFToken: true,
+  headers: { Accept: "application/json", "Content-Type": "application/json" },
+});
+// Credentials live in Laravel's HttpOnly session cookie, never browser storage.
+export async function prepareCsrf() {
+  await api.get("/csrf-cookie");
+}
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (
+      [401, 419].includes(error.response?.status) &&
+      ![
+        "/user",
+        "/login",
+        "/register",
+        "/forgot-password",
+        "/reset-password",
+      ].includes(error.config?.url)
+    )
+      window.dispatchEvent(new Event("pwdwork:unauthorized"));
+    return Promise.reject(error);
   },
-});
-
-api.interceptors.request.use((config) => {
-  const token = localStorage.getItem(TOKEN_KEY);
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
-  }
-  return config;
-});
-
-export function getStoredToken() {
-  return localStorage.getItem(TOKEN_KEY);
-}
-
-export function setStoredToken(token) {
-  if (token) {
-    localStorage.setItem(TOKEN_KEY, token);
-  } else {
-    localStorage.removeItem(TOKEN_KEY);
-  }
-}
-
-export function apiErrorMessage(error, fallback = "Something went wrong.") {
-  const data = error?.response?.data;
-  if (data?.errors) {
-    const first = Object.values(data.errors)[0];
-    if (Array.isArray(first) && first[0]) return first[0];
-  }
+);
+export function apiErrorMessage(
+  error,
+  fallback = "The request failed. Please try again.",
+) {
+  if (error.response?.status === 401)
+    return "Your session has expired. Please sign in again.";
+  if (error.response?.status === 419)
+    return "Your security session expired. Reload the page and try again.";
+  if (error.response?.status === 403)
+    return "You do not have permission to perform this action.";
+  if (error.response?.status === 429)
+    return "Too many attempts. Please wait before trying again.";
+  const data = error.response?.data;
+  if (data?.errors) return Object.values(data.errors).flat()[0] || fallback;
   if (data?.message) return data.message;
-  if (error?.code === "ERR_NETWORK") {
-    return "Cannot reach the API. Start Laravel with php artisan serve in the backend folder.";
-  }
-  return fallback;
+  return error.response
+    ? fallback
+    : "Cannot reach the server. Please check your connection and try again.";
 }
-
-export { TOKEN_KEY };
 export default api;

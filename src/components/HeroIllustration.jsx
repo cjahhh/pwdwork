@@ -68,7 +68,7 @@ function HeroIllustration() {
         <div className="mt-4 p-3 bg-brand-blue-light rounded-xl border border-brand-blue/10 flex items-center justify-between text-xs font-bold text-brand-blue">
           <span className="flex items-center gap-1.5">
             <span className="w-2.5 h-2.5 rounded-full bg-brand-teal" />
-            100% Verified Workplace Accommodations
+            Employer-reported Workplace Accommodations
           </span>
           <span className="font-mono text-gray-500">PWDWork Guarantee</span>
         </div>
