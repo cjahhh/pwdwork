@@ -1,3 +1,4 @@
+import InterviewArrangements from "../components/InterviewArrangements.jsx";
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
@@ -303,6 +304,8 @@ export default function EmployerApplicantsEnhancedPage() {
                       </p>
                       {applicant.headline && <p>{applicant.headline}</p>}
                       <p><Link to={`/reports?target_type=account&target_id=${applicant.accountId}`}>Report a problem with this hiring interaction</Link></p>
+                      <p><Link to={`/employer/accommodation-requests?application_id=${applicant.id}`}>Review shared accommodation requests</Link></p>
+                      <InterviewArrangements arrangements={applicant.confirmedArrangements} role="employer" />
                       <p>Skills: {applicant.skills.length ? applicant.skills.join(", ") : "Not provided"}</p>
                       <p className="whitespace-pre-wrap">Professional summary: {applicant.summary || "Not provided"}</p>
                       <p className="whitespace-pre-wrap">Cover letter: {applicant.coverLetter || "Not provided"}</p>
@@ -310,8 +313,8 @@ export default function EmployerApplicantsEnhancedPage() {
                         <button type="button" onClick={() => downloadResume(applicant.id)}>Download resume</button>
                       ) : <p>Resume: Not provided</p>}
                       {applicant.accommodationsShared ? (
-                        <p>Shared accommodation requests: {applicant.accommodations.join(", ") || "None selected"}</p>
-                      ) : <p>Accommodation requests are private.</p>}
+                        <p>Shared profile accommodation preferences: {applicant.accommodations.join(", ") || "None selected"}</p>
+                      ) : <p>Profile accommodation preferences are private.</p>}
                       {(applicant.interviewDate ||
                         schedules[applicant.id]?.date) && (
                         <p className="text-sm font-bold text-brand-blue mt-2">

@@ -20,6 +20,7 @@ function Navbar() {
           { label: "Company Profile", to: "/employer/profile" },
           { label: "Job Listings", to: "/employer/listings" },
           { label: "Applicants", to: "/employer/applicants" },
+            { label: "Accommodation Requests", to: "/employer/accommodation-requests" },
           { label: "Reports", to: "/reports" },
           { label: "Notifications", to: "/notifications" },
         ]
@@ -29,6 +30,7 @@ function Navbar() {
             { label: "Recommended Jobs", to: "/applicant/recommendations" },
             { label: "Profile", to: "/applicant/profile" },
             { label: "Applications", to: "/applicant/applications" },
+            { label: "Accommodation Requests", to: "/applicant/accommodation-requests" },
             { label: "Saved Jobs", to: "/applicant/saved-jobs" },
             { label: "Reports", to: "/reports" },
             { label: "Notifications", to: "/notifications" },

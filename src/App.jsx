@@ -11,6 +11,7 @@ import LoginPage from "./pages/LoginPage.jsx";
 import RegisterPage from "./pages/RegisterPage.jsx";
 import PasswordRecoveryPage from "./pages/PasswordRecoveryPage.jsx";
 import ForgotPasswordPage from "./pages/ForgotPasswordPage.jsx";
+import AccommodationRequestsPage from "./pages/AccommodationRequestsPage.jsx";
 import ApplicantProfilePage from "./pages/ApplicantProfilePage.jsx";
 import ApplicantApplicationsEnhancedPage from "./pages/ApplicantApplicationsEnhancedPage.jsx";
 import ApplicantSavedJobsPage from "./pages/ApplicantSavedJobsPage.jsx";
@@ -52,6 +53,7 @@ function App() {
           }
         />
         <Route path="/applicant/recommendations" element={<ProtectedRoute allowedRoles={["applicant"]}><RecommendationsPage /></ProtectedRoute>} />
+        <Route path="/applicant/accommodation-requests/:id?" element={<ProtectedRoute allowedRoles={["applicant"]}><AccommodationRequestsPage /></ProtectedRoute>} />
         <Route path="/applicant/profile" element={<ProtectedRoute allowedRoles={["applicant"]}><ApplicantProfilePage /></ProtectedRoute>} />
         <Route path="/applicant/applications" element={<ProtectedRoute allowedRoles={["applicant"]}><ApplicantApplicationsEnhancedPage /></ProtectedRoute>} />
         <Route path="/applicant/saved-jobs" element={<ProtectedRoute allowedRoles={["applicant"]}><ApplicantSavedJobsPage /></ProtectedRoute>} />
@@ -63,6 +65,7 @@ function App() {
             </ProtectedRoute>
           }
         />
+        <Route path="/employer/accommodation-requests/:id?" element={<ProtectedRoute allowedRoles={["employer"]}><AccommodationRequestsPage /></ProtectedRoute>} />
         <Route path="/employer/profile" element={<ProtectedRoute allowedRoles={["employer"]}><EmployerProfilePage /></ProtectedRoute>} />
         <Route path="/employer/listings" element={<ProtectedRoute allowedRoles={["employer"]}><EmployerListingsEnhancedPage /></ProtectedRoute>} />
         <Route path="/employer/applicants" element={<ProtectedRoute allowedRoles={["employer"]}><EmployerApplicantsEnhancedPage /></ProtectedRoute>} />

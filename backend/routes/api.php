@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\AccommodationRequestController;
 use App\Http\Controllers\AdminController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\JobListingController;
@@ -8,6 +9,7 @@ use App\Http\Controllers\PasswordController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\RecommendationController;
 use App\Http\Controllers\ReportController;
+use App\Http\Middleware\EnsureAccommodationRequestsReady;
 use App\Http\Requests\RequestReviewRequest;
 use App\Models\JobListing;
 use App\Services\ModerationService;
@@ -29,6 +31,15 @@ Route::get('/jobs/{jobListing}', [JobListingController::class, 'show']);
 
 Route::middleware(['auth:sanctum', 'role:applicant,employer,admin'])->group(function () {
     Route::get('/notifications', [NotificationController::class, 'index']);
+    Route::prefix('accommodation-requests')->middleware(['role:applicant,employer', EnsureAccommodationRequestsReady::class])->group(function () {
+        Route::get('/catalog', [AccommodationRequestController::class, 'catalog']);
+        Route::get('/', [AccommodationRequestController::class, 'index']);
+        Route::post('/', [AccommodationRequestController::class, 'store'])->middleware(['role:applicant', 'throttle:30,1']);
+        Route::get('/{id}', [AccommodationRequestController::class, 'show'])->whereNumber('id');
+        Route::post('/{id}/actions', [AccommodationRequestController::class, 'action'])->whereNumber('id')->middleware('throttle:60,1');
+        Route::get('/{id}/messages', [AccommodationRequestController::class, 'messages'])->whereNumber('id');
+        Route::get('/{id}/events', [AccommodationRequestController::class, 'events'])->whereNumber('id');
+    });
     Route::patch('/notifications/{userNotification}/read', [NotificationController::class, 'read']);
     Route::get('/reports', [ReportController::class, 'index'])->middleware('role:applicant,employer');
     Route::post('/reports', [ReportController::class, 'store'])->middleware(['role:applicant,employer', 'throttle:reports']);

@@ -4,6 +4,8 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Facades\Schema;
 
 class Application extends Model
 {
@@ -41,6 +43,35 @@ class Application extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    public function accommodationRequests(): HasMany
+    {
+        return $this->hasMany(AccommodationRequest::class);
+    }
+
+    public function confirmedAccommodationRequests(): HasMany
+    {
+        return $this->accommodationRequests()->where('status', 'agreed')->whereNull('withdrawn_at')->where('stage', 'interview');
+    }
+
+    public static function confirmedRequestRelations(): array
+    {
+        // Preserve existing application APIs while the additive Phase 4 upgrade is pending.
+        return Schema::hasTable('accommodation_requests') ? ['confirmedAccommodationRequests'] : [];
+    }
+
+    public function confirmedArrangements(): array
+    {
+        if (! $this->relationLoaded('confirmedAccommodationRequests')) {
+            return [];
+        }
+        $interview = ['date' => $this->interview_date?->toDateString(), 'time' => $this->interview_time ? substr($this->interview_time, 0, 5) : null];
+
+        return $this->confirmedAccommodationRequests->map(fn ($record) => [
+            'id' => $record->id, 'arrangement' => $record->arrangement, 'confirmedInterview' => $record->arrangement_interview,
+            'scheduleChanged' => $record->arrangement_interview !== $interview,
+        ])->all();
     }
 
     public function jobListing(): BelongsTo

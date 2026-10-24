@@ -194,7 +194,7 @@ class JobListingController extends Controller
             'query' => ['nullable', 'string', 'max:255'],
         ]);
         $applications = Application::query()
-            ->with(['user.applicantProfile.accommodations', 'jobListing'])
+            ->with(['user.applicantProfile.accommodations', 'jobListing', ...Application::confirmedRequestRelations()])
             ->whereHas('jobListing', fn ($query) => $query->where('employer_id', $request->user()->employer->id));
         if (! empty($filters['status'])) {
             $applications->where('status', $filters['status']);
@@ -236,13 +236,16 @@ class JobListingController extends Controller
             $record->update($data);
         }, 3);
 
-        return response()->json(['application' => $this->employerApplicationPayload($application->fresh(['user.applicantProfile.accommodations', 'jobListing']))]);
+        return response()->json(['application' => $this->employerApplicationPayload($application->fresh(['user.applicantProfile.accommodations', 'jobListing', ...Application::confirmedRequestRelations()]))]);
     }
 
     public function applicantApplications(Request $request): JsonResponse
     {
-        $filters = $request->validate(['status' => ['sometimes', Rule::in(Application::STATUSES)]]);
-        $applications = $request->user()->applications()->with('jobListing.employer');
+        $filters = $request->validate(['status' => ['sometimes', Rule::in(Application::STATUSES)], 'application_id' => ['sometimes', 'integer', 'min:1']]);
+        $applications = $request->user()->applications()->with(['jobListing.employer', ...Application::confirmedRequestRelations()]);
+        if (isset($filters['application_id'])) {
+            $applications->whereKey($filters['application_id']);
+        }
         if (! empty($filters['status'])) {
             $applications->where('status', $filters['status']);
         }
@@ -260,6 +263,7 @@ class JobListingController extends Controller
             'interviewDate' => $application->interview_date?->toDateString(),
             'interviewTime' => $application->interview_time,
             'interviewNotes' => $application->interview_notes,
+            'confirmedArrangements' => $application->confirmedArrangements(),
         ]);
     }
 
@@ -328,6 +332,7 @@ class JobListingController extends Controller
                 ? ($profile?->accommodations->whereIn('label', Accommodation::STANDARD_LABELS)->pluck('label')->values()->all() ?? []) : [],
             'interviewDate' => $application->interview_date?->toDateString(),
             'interviewTime' => $application->interview_time, 'interviewNotes' => $application->interview_notes,
+            'confirmedArrangements' => $application->confirmedArrangements(),
         ];
     }
 

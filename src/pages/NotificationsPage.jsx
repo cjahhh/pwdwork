@@ -24,8 +24,10 @@ export default function NotificationsPage() {
     {resource.data?.meta.total === 0 && <p>You have no notifications yet.</p>}
     {resource.data?.notifications.map((notice) => <article key={notice.id} className="panel">
       <h2>{notice.title}</h2><p className="whitespace-pre-wrap">{notice.body}</p><p>{notice.createdAt} · {notice.readAt ? "Read" : "Unread"}</p>
-      {notice.actionUrl?.startsWith("/") && !notice.actionUrl.startsWith("//") && <Link to={notice.actionUrl} className="underline">View related page</Link>}
-      {!notice.readAt && <button type="button" onClick={() => read(notice.id)} disabled={busy}>Mark as read</button>}
+      <div className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-3">
+        {notice.actionUrl?.startsWith("/") && !notice.actionUrl.startsWith("//") && <Link to={notice.actionUrl} className="underline">View related page</Link>}
+        {!notice.readAt && <button type="button" onClick={() => read(notice.id)} disabled={busy}>Mark as read</button>}
+      </div>
     </article>)}
     <Pagination resource={resource} label="Notification pages" disabled={busy} />
   </main>;

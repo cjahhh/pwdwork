@@ -1,3 +1,4 @@
+import InterviewArrangements from "../components/InterviewArrangements.jsx";
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { fetchApplicantApplications, updateApplicationSharing } from "../services/jobs.js";
@@ -49,18 +50,21 @@ export default function ApplicantApplicationsPage() {
             {item.company} | Applied {item.appliedAt}
           </p>
           <p>Status: {item.status}</p>
+          <p><Link to={`/applicant/accommodation-requests/new?application_id=${item.applicationId}&stage=${item.interviewDate ? "interview" : "recruitment"}`}>{item.interviewDate ? "Request interview accommodations" : "Request recruitment accommodations"}</Link>{" | "}<Link to={`/applicant/accommodation-requests?application_id=${item.applicationId}`}>Manage accommodation requests</Link></p>
           <p><Link to={`/reports?target_type=employer&target_id=${item.employerId}`}>Report a problem with this employer</Link></p>
           <label className="filter-option">
             <input type="checkbox" checked={item.shareAccommodations} disabled={busy !== null}
               onChange={(event) => share(item.applicationId, event.target.checked)} />
-            Share my standardized accommodation requests with {item.company} for this application.
+            Share my standardized profile accommodation preferences with {item.company} for this application.
           </label>
+          <p>This checkbox shares profile preferences only. Manage individual requests separately; withdraw a request there to stop sharing that request.</p>
           {item.interviewDate && (
             <p>
               Interview: {item.interviewDate} at {item.interviewTime}{" "}
               (Asia/Manila). {item.interviewNotes}
             </p>
           )}
+          <InterviewArrangements arrangements={item.confirmedArrangements} role="applicant" />
         </article>
       ))}
       <Pagination resource={resource} label="Application pages" disabled={busy !== null} />

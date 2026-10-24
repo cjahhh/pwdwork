@@ -182,3 +182,91 @@ Literal skills matching does not understand synonyms, negation, proficiency, yea
 - Browser suite results follow below. The initial sandboxed Chromium startup failed; running the isolated suite outside the sandbox resolved startup. One Phase 3 test selector was corrected from button to link before rerunning; this was a test issue, not an application failure.
 
 - `node scripts/browser-smoke.mjs`: final full run passed using isolated temporary SQLite fixtures and browser profile. Verified baseline search, authentication, saves, applications/consent, employer workflows, recovery, admin verification/moderation/reporting/suspension, responsive layout and persisted accessibility settings; Phase 3 recommendations/explanations, save action, apply detail link, personalized home and 320px reflow passed with no uncaught browser exceptions. Existing MySQL records were untouched.
+
+
+## Phase 4 - Accommodation Request System (24 October 2026)
+
+Phase 4 implements private recruitment/interview request coordination on existing job applications. Applicant and employer pages are available at `/applicant/accommodation-requests` and `/employer/accommodation-requests`, with individual `/:id` details, an applicant `/new` form, status/search/application filters, pagination, refresh, empty/loading/error/success states, and links from Applications/Applicants and the role navigation. Create, edit, withdraw, acknowledge, propose, confirm original arrangements, accept/decline alternatives, discussion, history and notifications use real Laravel APIs and database persistence. There are no placeholder actions or automatic applications, hiring decisions, recommendation penalties or schedule changes.
+
+### Privacy, consent and lifecycle
+
+The request uses an intentional required sharing checkbox. Only selected catalog labels and optional practical details/discussion/history are shared with the employer associated with the owned application. No profile preference is copied automatically. Existing `share_accommodations` consent remains independent and unchanged. Diagnoses, certificates, PWD IDs and uploads are not requested. Applicants are instructed to describe practical support, not medical information.
+
+Statuses are `submitted`, `under_discussion`, `alternative_proposed`, `agreed`, `unable_to_provide` and `withdrawn`. Employer acknowledgment moves Submitted to Under discussion. Confirmation of original requests is allowed only from Submitted/Under discussion; alternatives are proposals and cannot be confirmed by the employer while pending. Only the applicant can accept/decline a proposal. A decline returns to discussion. Inability responses require an explanation and never reject the application. Applicant edits renew sharing consent, preserve history, reset status to Submitted and clear previous agreements. All non-withdrawn requests support private messages. Withdrawal is irrevocable for that request, blocks employer lists/detail/messages/history/actions, and prevents further mutations; applicants retain their own history and may intentionally create a new request. Previously viewed information cannot be made unseen.
+
+Current interview information comes from the existing application. Submission and confirmation record interview snapshots; rescheduling preserves the request and flags changed context for discussion/reconfirmation. Confirmed interview arrangements appear in existing applicant/employer application cards, with changed-schedule warnings. Schedule changes still go through the existing authorized scheduling API. No request action writes application status, interview date/time or profile preferences.
+
+### Schema and safe upgrade
+
+New additive migration: `backend/database/migrations/2026_10_25_000001_create_accommodation_request_workflows.php`. It creates `accommodation_requests`, `accommodation_request_messages`, and `accommodation_request_events`, including restrictive foreign keys, timestamps, JSON category/snapshot fields, status/version, deduplication keys/hashes and lookup/order/uniqueness indexes. Its `up()` does not alter existing tables or records. **The migration was not applied to the existing MySQL database.** Existing application APIs skip new relations while the table is absent; Phase 4 endpoints return a generic 503 until all new tables exist. The pending migration was confirmed with the read-only `php artisan migrate:status` command.
+
+[PHASE4-SETUP.md](PHASE4-SETUP.md) documents the exact schema, approved manual migration command, safe upgrade sequence, status transition table, request payloads, test commands, configuration, production requirements and limitations. The new features require that upgrade before use against the existing database. No deployment or push was performed.
+
+### API and security
+
+New authenticated applicant/employer routes:
+
+- `GET /api/accommodation-requests/catalog`
+- `GET /api/accommodation-requests` (`status`, `application_id`, `query`, `page`, `per_page`)
+- `POST /api/accommodation-requests` (applicant only, explicit sharing)
+- `GET /api/accommodation-requests/{id}`
+- `POST /api/accommodation-requests/{id}/actions`
+- `GET /api/accommodation-requests/{id}/messages`
+- `GET /api/accommodation-requests/{id}/events`
+
+Existing `GET /api/applicant/applications` additionally supports a validated `application_id` filter for the create form. Authorized application payloads include confirmed interview arrangements when Phase 4 is installed. Existing saved-job behavior and matching logic are unchanged.
+
+Sanctum, existing active-account/role middleware and first-party CSRF protection remain in use. Participant-scoped queries exclude other applicants/companies/admins and recheck employer authorization on message/history queries. New private responses use `Cache-Control: private, no-store`. Laravel Form Requests validate writes; pagination defaults to 12 and caps at 50. Context relations are eager loaded and lists/history/messages sort by descending ID. Private discussion has no edit/delete API. React text rendering escapes user input, with no HTML injection or attachment handling.
+
+Transactions and locking reads recheck active roles and current versions. Unique per-application submission keys and per-request action keys provide idempotency; payload hashes reject reuse for changed content. Exact retries add no messages/events/notifications. Stale versions return 409 and require refresh/review. Client-side in-flight guards prevent repeated submissions and retain an action key across uncertain network failures. Creation/actions have request throttles. Notification failure rolls back the entire private write.
+
+In-app notifications reuse `user_notifications`, existing recipient ownership/read/unread APIs and the Notifications page. Each successful action creates a single generic notice for the other participant, with a relative safe link and no categories, descriptions, medical information or message content in previews. Withdrawal links lead to the list, and old links remain subject to current access checks. Phase 4 does not require email, workers or paid services. No request body, discussion or private history is added to ordinary admin audit logs, admin statistics or admin APIs. Reporting links do not copy private descriptions into reports.
+
+### Accessibility
+
+Native labeled forms, fieldsets, explicit textual statuses, validation, status/error announcements, refresh/pagination controls, existing `ReviewDialog` focus management and confirmation flows are reused. Accept/decline/withdraw moves focus to the updated request heading when its original trigger disappears; editing restores focus to its trigger. Existing dark/high-contrast/text-size/reduced-motion/font/cursor settings apply through the current design system. Long private text wraps on narrow screens. Formal WCAG conformance requires a separate manual audit; browser checks cover practical reflow and focus behavior where supported by this environment.
+
+### Files added
+
+- `backend/database/migrations/2026_10_25_000001_create_accommodation_request_workflows.php`
+- `backend/app/Models/AccommodationRequest.php`, `AccommodationRequestMessage.php`, `AccommodationRequestEvent.php`
+- `backend/app/Services/AccommodationRequestService.php`
+- `backend/app/Http/Controllers/AccommodationRequestController.php`
+- `backend/app/Http/Requests/AccommodationWorkflowRequest.php`
+- `backend/app/Http/Middleware/EnsureAccommodationRequestsReady.php`
+- `backend/tests/Feature/PhaseFourTest.php`
+- `src/services/accommodationRequests.js`
+- `src/pages/AccommodationRequestsPage.jsx`
+- `src/components/InterviewArrangements.jsx`
+- `PHASE4-SETUP.md`
+
+### Files modified
+
+`backend/app/Models/Application.php`, `backend/app/Http/Controllers/JobListingController.php`, `backend/routes/api.php`, `src/App.jsx`, `src/components/Navbar.jsx`, `src/pages/ApplicantApplicationsEnhancedPage.jsx`, `src/pages/EmployerApplicantsEnhancedPage.jsx`, `scripts/browser-smoke.mjs`, and this report. Browser tooling supports optional alternate ports and a focused Phase 4 mode, using only temporary fixtures/profile/proxy configuration.
+
+### Verification and limitations
+
+- Full `php artisan test`: **70 tests passed, 723 assertions**, including 13 Phase 4 tests and all existing Phase 1-3 regressions (isolated in-memory SQLite).
+- React production build and frontend lint passed; final verification rerun results follow below.
+- PHP syntax checks across app/routes/tests/migrations passed; Laravel Pint formatted and checked changed/new PHP files.
+- `git diff --check` and browser-script syntax checks passed.
+- Focused Phase 4 browser smoke checks passed using temporary SQLite/profile and separate test ports: intentional sharing, native form submission, escaped private message content, edit/history, employer acknowledgment/proposal, explicit acceptance, confirmed arrangement integration, mobile reflow, dialog focus/cancel/withdraw, and revoked employer access.
+- Native CDP keyboard injection did not reach the focused document in this Windows headless environment. The harness records this limitation and uses native `requestSubmit` and dialog `cancel` event fallbacks, while asserting focus restoration. This does not establish full keyboard-only or WCAG conformance; a manual accessibility audit remains necessary.
+- Read-only configured MySQL `migrate:status` and `migrate --pretend --path=database/migrations/2026_10_25_000001_create_accommodation_request_workflows.php` passed. The preview contains only the three new tables, constraints and indexes. The migration remains pending; no Phase 4 MySQL DDL or request writes were executed, and actual MySQL workflow/load tests remain an upgrade/staging requirement.
+- An initial browser focus assertion exposed a real confirmation-dialog focus ordering issue; focus now moves to the updated heading after dialog cleanup. Earlier test harness input/focus assumptions were corrected before the successful focused run. Full final browser regression result follows below. Phase 4 regression coverage includes intentional/optional sharing, application ownership and participant/role boundaries, private-profile exclusion, immutable messages, withdrawn access revocation, applicant alternative acceptance/decline, invalid transitions, retry/conflict behavior, notification privacy/atomicity, pagination/filtering, edit history/agreement reset, interview rescheduling, independent profile consent, recommendation-score invariance and operation before the migration.
+
+Communication is refresh-based, with no realtime service, attachments, reminders, multi-user employer teams or retention/export/deletion automation. Text is not automatically screened for medical disclosures; guidance and minimization are used instead. Arrangements are employer/applicant statements, not independently verified accessibility guarantees. Tests use isolated SQLite for mutations, with MySQL schema/runtime verification described in final results; no existing MySQL records were changed. Production needs reviewed additive migrations, HTTPS/secure-cookie/CORS/Sanctum configuration, persistent protected MySQL/backups, disabled debug/body logging, and measured load/accessibility/retention reviews. The independent lifecycle, typed events, participant authorization, idempotency and regression tests provide Phase 5 readiness without coupling accommodation outcomes to hiring or recommendations.
+
+
+Final Phase 4 verification:
+
+- Full browser regression (`node scripts/browser-smoke.mjs` with separate API/frontend/debug ports): passed for Phases 1-4 using only isolated temporary SQLite fixtures and browser profile. No uncaught browser exceptions. Includes all prior search/authentication/application/scheduling/admin/recommendation/saved-state workflows and the new request sharing, messages, editing, proposal/acceptance, interview integration, 320px layout, dialog focus, and withdrawal authorization checks. Native keyboard injection used the documented form/cancel fallback.
+- Final production frontend build and lint: passed. Final PHP syntax and Pint checks: passed. No dependencies, deployment, GitHub push, existing-database migration or existing-record mutations were introduced.
+- The Phase 4 migration remains pending in the configured MySQL database. Existing application APIs continue to work while it is pending. Follow PHASE4-SETUP.md for the separately approved upgrade; actual MySQL request writes and a manual keyboard/accessibility audit remain staging/deployment verification tasks.
+
+
+### Phase 4 final security and notification polish
+
+Accommodation-request API exception responses now use safe messages even with debug mode enabled. Unauthorized or missing request details/messages/history/actions keep their existing HTTP 403/404 authorization behavior and return no model names, exception details, database information, stack traces or private data. Not-found responses display: "Accommodation request not found or you do not have permission to view it." Unexpected failures use a generic message; field validation errors remain useful and rate-limit headers are preserved. This handling is scoped to accommodation-request endpoints; ownership checks are unchanged. Notifications now separate the related-page link and mark-as-read button with responsive horizontal/vertical spacing, preserving control order and keyboard access.
+
+Verification: 72 Laravel tests passed (790 assertions), including unrelated-company direct API access, identical safe errors for missing/unauthorized IDs, protected message/history/actions, debug on/off and simulated internal failures. Full browser regression passed with isolated temporary SQLite fixtures, including the accessible unauthorized direct-link message and computed notification spacing; the previously documented native keyboard injection fallback remains in use. React build, lint, PHP syntax, Pint and diff checks passed. No existing MySQL records, schema, deployment or GitHub push were changed.

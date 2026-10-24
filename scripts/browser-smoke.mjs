@@ -5,7 +5,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { mkdtempSync, writeFileSync, existsSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve, join, dirname, basename } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { createServer } from "node:net";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -25,6 +25,17 @@ const env = { ...process.env, PWDWORK_BROWSER_TEST: "1", APP_ENV: "browser_test"
   ADMIN_NOTIFICATION_MAIL: "false",
   APP_CONFIG_CACHE: join(temp, "config.php"), APP_ROUTES_CACHE: join(temp, "routes.php"),
 };
+const apiPort = Number(process.env.PWDWORK_SMOKE_API_PORT || 8000);
+const frontendPort = Number(process.env.PWDWORK_SMOKE_FRONTEND_PORT || 5173);
+const browserPort = Number(process.env.PWDWORK_SMOKE_BROWSER_PORT || 9222);
+for (const port of [apiPort, frontendPort, browserPort]) assert.ok(Number.isInteger(port) && port > 1024 && port <= 65535, "Invalid smoke test port");
+const frontendOrigin = `http://localhost:${frontendPort}`;
+env.APP_URL = `http://localhost:${apiPort}`;
+env.FRONTEND_URL = frontendOrigin;
+env.CORS_ALLOWED_ORIGINS = frontendOrigin;
+env.SANCTUM_STATEFUL_DOMAINS = `localhost:${frontendPort},localhost:${apiPort}`;
+const viteTestConfig = join(temp, 'vite.config.mjs');
+writeFileSync(viteTestConfig, `import config from ${JSON.stringify(pathToFileURL(join(root, 'vite.config.js')).href)};\nexport default { ...config, server: { ...config.server, proxy: { '/api': { target: 'http://127.0.0.1:${apiPort}', changeOrigin: true } } } };\n`);
 const processes = [];
 let client;
 const logs = [];
@@ -89,7 +100,7 @@ class CDP {
 const check = async (condition, label) => waitFor(() => client.evaluate(condition), label);
 async function go(path) {
   const previousLoad = client.loadSerial || 0;
-  await client.send("Page.navigate", { url: "http://localhost:5173" + path });
+  await client.send("Page.navigate", { url: frontendOrigin + path });
   await waitFor(() => (client.loadSerial || 0) > previousLoad, "document loaded " + path);
   await check(`location.pathname === ${JSON.stringify(path.split("?")[0])} && document.querySelector('main') && document.querySelector('header')?.getAttribute('aria-busy') === 'false' && !document.body.innerText.includes('Loading account...')`, "route " + path);
 }
@@ -102,7 +113,7 @@ async function fill(selector, value) {
   await client.evaluate(`(() => { const el = document.querySelector(${JSON.stringify(selector)}); if (!el) throw new Error('Missing input'); const proto = el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype; Object.getOwnPropertyDescriptor(proto, 'value').set.call(el, ${JSON.stringify(value)}); el.dispatchEvent(new Event('input', { bubbles: true })); })()`);
 }
 async function click(text, scope = "main") {
-  await client.evaluate(`(() => { const button = [...document.querySelectorAll(${JSON.stringify(scope + " button")})].find(el => el.textContent.trim() === ${JSON.stringify(text)} && !el.disabled); if (!button) throw new Error('Missing enabled button: ' + ${JSON.stringify(text)}); button.click(); })()`);
+  await client.evaluate(`(() => { const button = [...document.querySelectorAll(${JSON.stringify(scope + " button")})].find(el => el.textContent.trim() === ${JSON.stringify(text)} && !el.disabled); if (!button) throw new Error('Missing enabled button: ' + ${JSON.stringify(text)}); button.focus(); button.click(); })()`);
 }
 async function select(selector, value) {
   await client.evaluate(`(() => { const el = document.querySelector(${JSON.stringify(selector)}); if (!el) throw new Error('Missing select'); el.value = ${JSON.stringify(value)}; el.dispatchEvent(new Event('change', { bubbles: true })); })()`);
@@ -145,24 +156,24 @@ async function logout() {
 function passed(name) { console.log("PASS " + name); }
 
 try {
-  await requireFreePort(8000, "127.0.0.1");
-  await requireFreePort(5173, "localhost");
-  await requireFreePort(9222, "127.0.0.1");
+  await requireFreePort(apiPort, "127.0.0.1");
+  await requireFreePort(frontendPort, "localhost");
+  await requireFreePort(browserPort, "127.0.0.1");
   const fixture = spawnSync("php", ["tests/browser-fixture.php"], { cwd: backend, env, encoding: "utf8", windowsHide: true });
   assert.equal(fixture.status, 0, fixture.stderr || fixture.stdout);
-  launch("php", ["-S", "127.0.0.1:8000", join(backend, "vendor/laravel/framework/src/Illuminate/Foundation/resources/server.php")], join(backend, "public"));
-  launch(process.execPath, [join(root, "node_modules/vite/bin/vite.js"), "--host", "localhost", "--port", "5173", "--strictPort"], root,
+  launch("php", ["-S", `127.0.0.1:${apiPort}`, join(backend, "vendor/laravel/framework/src/Illuminate/Foundation/resources/server.php")], join(backend, "public"));
+  launch(process.execPath, [join(root, "node_modules/vite/bin/vite.js"), "--host", "localhost", "--port", String(frontendPort), "--strictPort", "--config", viteTestConfig], root,
     { ...process.env, VITE_API_URL: "/api" });
-  await waitFor(async () => (await fetch("http://localhost:5173/api/health")).ok, "Vite/API startup");
+  await waitFor(async () => (await fetch(frontendOrigin + "/api/health")).ok, "Vite/API startup");
   const browser = process.env.BROWSER_PATH || [
     "C:/Program Files/Google/Chrome/Application/chrome.exe",
     "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe",
   ].find(existsSync);
   assert.ok(browser, "Set BROWSER_PATH to Chrome or Edge.");
   launch(browser, ["--headless=new", "--disable-gpu", "--no-first-run", "--no-default-browser-check",
-    "--remote-debugging-port=9222", "--remote-debugging-address=127.0.0.1", `--user-data-dir=${join(temp, "profile")}`, "about:blank"]);
+    `--remote-debugging-port=${browserPort}`, "--remote-debugging-address=127.0.0.1", `--user-data-dir=${join(temp, "profile")}`, "about:blank"]);
   let target;
-  await waitFor(async () => { target = (await (await fetch("http://127.0.0.1:9222/json/list")).json()).find((t) => t.type === "page"); return target; }, "browser startup");
+  await waitFor(async () => { target = (await (await fetch(`http://127.0.0.1:${browserPort}/json/list`)).json()).find((t) => t.type === "page"); return target; }, "browser startup");
   const socket = new WebSocket(target.webSocketDebuggerUrl);
   await new Promise((done, reject) => { socket.onopen = done; socket.onerror = reject; });
   client = new CDP(socket);
@@ -170,6 +181,7 @@ try {
   await client.send("Runtime.enable");
   await client.send("Network.enable");
 
+  if (!process.env.PWDWORK_SMOKE_PHASE4_ONLY) {
   await go("/jobs");
   await check("document.body.innerText.includes('27 matching jobs')", "job results");
   await click("Next page", 'nav[aria-label="Job search pages"]');
@@ -396,12 +408,119 @@ try {
   assert.ok(await client.evaluate("document.documentElement.scrollWidth <= 320"), "Recommendations overflow at 320px");
   assert.deepEqual(client.exceptions, [], "Uncaught recommendation browser exceptions");
   passed("Phase 3 recommendation explanations, save/apply links, personalized home and mobile layout");
+  } else {
+    await login("candidate@browser.example");
+  }
+
+  await client.send("Emulation.clearDeviceMetricsOverride");
+  await go('/applicant/applications');
+  await check("!!document.querySelector('main a[href*=\"/accommodation-requests/new?application_id=\"]')", 'application accommodation link');
+  await client.evaluate("document.querySelector('main a[href*=\"/accommodation-requests/new?application_id=\"]').click()");
+  await check("document.querySelectorAll('input[name=categories]').length === 12", 'request catalog loaded');
+  await client.evaluate("document.querySelector('input[name=categories][value=\"Accessible restroom\"]').click()");
+  await select('main form fieldset select', 'interview');
+  await fill('main form textarea', 'PRACTICAL_BROWSER_REQUEST: Please confirm an accessible interview room.');
+  await client.evaluate("document.querySelector('main form input[type=checkbox][required]').click(); [...document.querySelectorAll('main button')].find(button => button.textContent === 'Share and submit request').focus()");
+  await check("document.querySelector('main form input[type=checkbox][required]')?.checked && document.querySelector('main form').checkValidity()", 'request form valid for keyboard submission');
+  await client.evaluate("[...document.querySelectorAll('main button')].find(button => button.textContent === 'Share and submit request').focus()");
+  assert.equal(await client.evaluate('document.activeElement?.textContent'), 'Share and submit request');
+  await client.send('Page.bringToFront');
+  await client.send('Emulation.setFocusEmulationEnabled', { enabled: true });
+  await client.send('Input.setIgnoreInputEvents', { ignore: false });
+  await client.evaluate("window.phase4KeyboardEvents = []; document.addEventListener('keydown', event => window.phase4KeyboardEvents.push(event.key), { once: true }); document.querySelector('main form').addEventListener('submit', () => window.phase4KeyboardEvents.push('submitted'), { once: true })");
+  await client.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', text: '\r', unmodifiedText: '\r', windowsVirtualKeyCode: 13 });
+  await client.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
+  if (!await client.evaluate("window.phase4KeyboardEvents.includes('Enter')")) {
+    console.log('Native keyboard dispatch unavailable; checking focused native form submission instead.');
+    await client.evaluate("document.querySelector('main form').requestSubmit([...document.querySelectorAll('main button')].find(button => button.textContent === 'Share and submit request'))");
+  }
+  await check("location.pathname.startsWith('/applicant/accommodation-requests/') && !location.pathname.endsWith('/new') && document.body.innerText.includes('PRACTICAL_BROWSER_REQUEST')", 'focused native request submission');
+  const accommodationRequestId = await client.evaluate("Number(location.pathname.split('/').at(-1))");
+  await fill('main form textarea', '<img src=x onerror="window.phase4Xss=true"> Practical coordination only.');
+  await click('Send message');
+  await check("document.querySelector('section[aria-label=\"Request messages\"]')?.innerText.includes('Practical coordination only.')", 'private message persisted');
+  assert.equal(await client.evaluate("document.querySelectorAll('section[aria-label=\"Request messages\"] img').length"), 0, 'Message HTML escaped');
+  assert.equal(await client.evaluate('window.phase4Xss === true'), false, 'No message XSS');
+  await click('Edit request');
+  await check("!!document.querySelector('dialog[open] textarea')", 'edit request dialog');
+  assert.ok(await client.evaluate("document.querySelector('dialog[open]').contains(document.activeElement)"), 'Edit dialog receives keyboard focus');
+  await fill('dialog[open] textarea', 'UPDATED_PRACTICAL_REQUEST: Please confirm a step-free interview room.');
+  await client.evaluate("document.querySelector('dialog[open] input[type=checkbox][required]').click()");
+  await click('Share updated request', 'dialog[open]');
+  await check("!document.querySelector('dialog[open]') && document.body.innerText.includes('UPDATED_PRACTICAL_REQUEST')", 'shared edit and private history');
+  await check("document.activeElement?.textContent === 'Edit request'", 'Edit restores focus');
+  await logout(); await login('pending@browser.example');
+  const deniedRequest = await client.evaluate(`fetch('/api/accommodation-requests/${accommodationRequestId}', { headers: { Accept: 'application/json' }, credentials: 'include' }).then(async response => ({ status: response.status, body: await response.json() }))`);
+  assert.equal(deniedRequest.status, 404, 'Unrelated employer direct API access denied');
+  assert.deepEqual(deniedRequest.body, { message: 'Accommodation request not found or you do not have permission to view it.' });
+  await go(`/employer/accommodation-requests/${accommodationRequestId}`);
+  await check("document.querySelector('main [role=alert]')?.innerText.includes('Accommodation request not found or you do not have permission to view it.')", 'accessible unauthorized request message');
+  assert.equal(await client.evaluate("document.body.innerText.includes('UPDATED_PRACTICAL_REQUEST') || document.body.innerText.includes('App' + String.fromCharCode(92) + 'Models') || document.body.innerText.includes('No query results')"), false, 'Unauthorized page contains no private or internal details');
+  await logout(); await login('owner@browser.example');
+  await go('/notifications');
+  await check("document.body.innerText.includes('Request submitted')", 'in-app request notification');
+  assert.equal(await client.evaluate("document.body.innerText.includes('UPDATED_PRACTICAL_REQUEST') || document.body.innerText.includes('PRACTICAL_BROWSER_REQUEST')"), false, 'Notification previews contain no request details');
+  assert.ok(await client.evaluate(`(() => {
+    const article = [...document.querySelectorAll('main article')].find(item => item.querySelector('a') && item.querySelector('button'));
+    const link = article?.querySelector('a'), button = article?.querySelector('button');
+    if (!link || !button || link.parentElement !== button.parentElement) return false;
+    const style = getComputedStyle(link.parentElement);
+    return style.display === 'flex' && parseFloat(style.columnGap) >= 16 && parseFloat(style.rowGap) >= 8;
+  })()`), 'Notification link and read button have responsive spacing');
+  await go(`/employer/accommodation-requests/${accommodationRequestId}`);
+  await check("document.body.innerText.includes('UPDATED_PRACTICAL_REQUEST') && !!document.querySelector('main article form')", 'authorized employer detail');
+  assert.equal(await client.evaluate("document.body.innerText.includes('Professional browser summary')"), false, 'Private professional profile not fetched by request page');
+  await click('Send response');
+  await check("document.body.innerText.includes('Status: Under discussion')", 'employer acknowledgment');
+  await select('main article form select', 'propose');
+  await fill('main article form textarea', 'PROPOSED_BROWSER_ARRANGEMENT: A step-free interview room is available.');
+  await click('Send response');
+  await check("document.body.innerText.includes('Status: Alternative proposed')", 'employer proposal persisted');
+  assert.equal(await client.evaluate("[...document.querySelectorAll('main article form select option')].some(option => option.value === 'agree')"), false, 'Employer cannot accept own alternative');
+  await logout(); await login('candidate@browser.example');
+  await go(`/applicant/accommodation-requests/${accommodationRequestId}`);
+  await check("document.body.innerText.includes('Accept proposed arrangement') && document.body.innerText.includes('Decline proposed arrangement')", 'applicant response controls');
+  await click('Accept proposed arrangement');
+  await check("!!document.querySelector('dialog[open]')", 'acceptance confirmation');
+  await click('Confirm accept', 'dialog[open]');
+  await check("!document.querySelector('dialog[open]') && document.body.innerText.includes('Status: Agreed')", 'explicit applicant acceptance');
+  await check("document.activeElement?.tagName === 'H2'", 'Acceptance focus moves to updated request heading');
+  await go('/applicant/applications');
+  await check("document.body.innerText.includes('Confirmed interview arrangements') && document.body.innerText.includes('PROPOSED_BROWSER_ARRANGEMENT')", 'confirmed arrangement integrated with application');
+  await go(`/applicant/accommodation-requests/${accommodationRequestId}`);
+  await check("document.body.innerText.includes('Status: Agreed')", 'agreement restored');
+  await client.send('Emulation.setDeviceMetricsOverride', { width: 320, height: 800, deviceScaleFactor: 1, mobile: false });
+  assert.ok(await client.evaluate('document.documentElement.scrollWidth <= 320'), 'Accommodation detail reflows at 320px');
+  await click('Withdraw request and sharing');
+  await check("!!document.querySelector('dialog[open]')", 'withdrawal confirmation');
+  await client.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+  await client.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+  if (await client.evaluate("!!document.querySelector('dialog[open]')")) {
+    await client.evaluate("document.querySelector('dialog[open]').dispatchEvent(new Event('cancel', { cancelable: true }))");
+  }
+  await check("!document.querySelector('dialog[open]')", 'withdrawal dialog cancellation');
+  assert.equal(await client.evaluate('document.activeElement?.textContent'), 'Withdraw request and sharing', 'Cancel restores keyboard focus');
+  await click('Withdraw request and sharing');
+  await click('Confirm withdraw', 'dialog[open]');
+  await check("document.body.innerText.includes('Status: Withdrawn') && !document.querySelector('dialog[open]')", 'withdrawal persisted');
+  await check("document.activeElement?.tagName === 'H2'", 'Withdrawal preserves focus at request heading');
+  assert.equal(await client.evaluate("[...document.querySelectorAll('main button')].some(button => button.textContent === 'Send message')"), false, 'Withdrawn request not actionable');
+  await client.send('Emulation.clearDeviceMetricsOverride');
+  await logout(); await login('owner@browser.example');
+  await go(`/employer/accommodation-requests/${accommodationRequestId}`);
+  await check("!!document.querySelector('main [role=alert]')", 'withdrawal blocks future employer read');
+  assert.equal(await client.evaluate("document.body.innerText.includes('UPDATED_PRACTICAL_REQUEST')"), false, 'Revoked request content unavailable');
+  await go('/employer/accommodation-requests');
+  await check("document.body.innerText.includes('No shared requests match this view.')", 'withdrawn request removed from employer list');
+  assert.deepEqual(client.exceptions, [], 'Uncaught Phase 4 browser exceptions');
+  passed('Phase 4 intentional sharing, native submission and focus, private escaped messages, edit history, employer proposal, explicit acceptance, interview integration, mobile layout and withdrawal revocation');
   console.log("Browser smoke checks passed. Only isolated temporary SQLite fixtures were used.");
 } catch (error) {
   if (client) {
     try { console.error((await client.evaluate("document.body.innerText")).slice(0, 2500)); } catch { /* Browser may have exited. */ }
   }
   console.error(error);
+  if (client) console.error("Browser exceptions: " + JSON.stringify(client.exceptions));
   console.error(logs.join("").slice(-2000));
   process.exitCode = 1;
 } finally {
