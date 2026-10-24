@@ -32,16 +32,7 @@ class PwdWorkSeeder extends Seeder
             return [$row['label'] => $model];
         });
 
-        $admin = User::query()->firstOrCreate(
-            ['email' => 'admin@pwdwork.org'],
-            [
-                'name' => 'PWDWork Admin',
-                'password' => Hash::make('password'),
-                'role' => 'admin',
-                'status' => 'active',
-                'email_verified_at' => now(),
-            ]
-        );
+        // Privileged accounts are provisioned through the authorized CLI only.
 
         $applicant = User::query()->firstOrCreate(
             ['email' => 'applicant@pwdwork.org'],
@@ -260,15 +251,5 @@ class PwdWorkSeeder extends Seeder
             ]
         );
 
-        UserNotification::query()->updateOrCreate(
-            [
-                'user_id' => $admin->id,
-                'title' => 'Employer verification queue',
-            ],
-            [
-                'body' => 'Six inclusive employers are marked verified in the demo seed.',
-                'read_at' => null,
-            ]
-        );
     }
 }

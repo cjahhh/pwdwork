@@ -28,11 +28,11 @@ class PhaseOnePointFiveTest extends TestCase
     private function job(?User $owner = null, array $fields = []): JobListing
     {
         $owner ??= $this->account('employer');
-        $employer = Employer::firstOrCreate(['user_id' => $owner->id], ['company_name' => 'Test Company']);
+        $employer = Employer::firstOrCreate(['user_id' => $owner->id], ['company_name' => 'Test Company', 'verification_status' => 'verified']);
 
         return $employer->jobListings()->create([
             'title' => 'Support role', 'location' => 'Manila', 'employment_type' => 'Full Time',
-            'work_mode' => 'Remote', 'description' => 'Customer support', 'status' => 'open', ...$fields,
+            'work_mode' => 'Remote', 'description' => 'Customer support', 'status' => 'open', 'moderation_status' => 'approved', ...$fields,
         ]);
     }
 

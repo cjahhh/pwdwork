@@ -60,6 +60,10 @@ function JobDetails({ id, user }) {
             {job.company} | {job.location} | {job.type} | {job.mode}
           </p>
           <p>{job.description}</p>
+          {user && ["applicant", "employer"].includes(user.role) && <p>
+            <Link to={`/reports?target_type=job&target_id=${job.id}`}>Report this listing</Link>{" | "}
+            <Link to={`/reports?target_type=employer&target_id=${job.employerId}`}>Report this employer</Link>
+          </p>}
           {job.flexibleSchedule && <p>Flexible schedule available</p>}
           <h2>Employer-reported accommodations</h2>
           <p>

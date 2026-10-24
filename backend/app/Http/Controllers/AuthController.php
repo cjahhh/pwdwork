@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\AdminAuditLog;
 use App\Models\ApplicantProfile;
 use App\Models\Employer;
 use App\Models\User;
@@ -43,11 +44,13 @@ class AuthController extends Controller
             }
 
             if ($user->role === 'employer') {
-                Employer::query()->create([
+                $employer = Employer::query()->create([
                     'user_id' => $user->id,
                     'company_name' => $data['company_name'] ?: $data['name'],
                     'verification_status' => 'pending',
+                    'verification_requested_at' => now(),
                 ]);
+                AdminAuditLog::record($user, 'employer.registered', 'employer', $employer->id, null, 'pending', 'Employer registration awaiting review.');
             }
 
             return $user;
@@ -80,6 +83,7 @@ class AuthController extends Controller
         if ($user->status !== 'active') {
             return response()->json([
                 'message' => 'This account is not active.',
+                'code' => 'account_inactive',
             ], 403);
         }
 
@@ -129,6 +133,7 @@ class AuthController extends Controller
             'role' => $user->role,
             'status' => $user->status,
             'company_name' => $user->employer?->company_name,
+            'verification_status' => $user->employer?->verification_status,
         ];
     }
 }

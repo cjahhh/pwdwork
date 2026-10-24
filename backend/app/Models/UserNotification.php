@@ -12,6 +12,7 @@ class UserNotification extends Model
         'title',
         'body',
         'read_at',
+        'action_url',
     ];
 
     /**

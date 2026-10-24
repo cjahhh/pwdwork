@@ -17,6 +17,11 @@ import EmployerProfilePage from "./pages/EmployerProfilePage.jsx";
 import EmployerListingsEnhancedPage from "./pages/EmployerListingsEnhancedPage.jsx";
 import EmployerApplicantsEnhancedPage from "./pages/EmployerApplicantsEnhancedPage.jsx";
 import AdminDashboardPage from "./pages/AdminDashboardPage.jsx";
+import AdminLayout from "./pages/admin/AdminLayout.jsx";
+import AdminQueuePage from "./pages/admin/AdminQueuePage.jsx";
+import AdminAuditPage from "./pages/admin/AdminAuditPage.jsx";
+import ReportsPage from "./pages/ReportsPage.jsx";
+import NotificationsPage from "./pages/NotificationsPage.jsx";
 import NotFoundPage from "./pages/NotFoundPage.jsx";
 
 /**
@@ -63,10 +68,19 @@ function App() {
           path="/admin"
           element={
             <ProtectedRoute allowedRoles={["admin"]}>
-              <AdminDashboardPage />
+              <AdminLayout />
             </ProtectedRoute>
           }
-        />
+        >
+          <Route index element={<AdminDashboardPage />} />
+          <Route path="employers" element={<AdminQueuePage key="employer" kind="employer" />} />
+          <Route path="jobs" element={<AdminQueuePage key="job" kind="job" />} />
+          <Route path="users" element={<AdminQueuePage key="user" kind="user" />} />
+          <Route path="reports" element={<AdminQueuePage key="report" kind="report" />} />
+          <Route path="audit" element={<AdminAuditPage />} />
+        </Route>
+        <Route path="/reports" element={<ProtectedRoute allowedRoles={["applicant", "employer"]}><ReportsPage /></ProtectedRoute>} />
+        <Route path="/notifications" element={<ProtectedRoute allowedRoles={["applicant", "employer", "admin"]}><NotificationsPage /></ProtectedRoute>} />
 
         <Route path="*" element={<NotFoundPage />} />
       </Route>

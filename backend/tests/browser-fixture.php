@@ -28,7 +28,7 @@ if (config('database.default') !== 'sqlite'
 }
 Artisan::call('migrate', ['--force' => true]);
 $owner = User::factory()->create(['name' => 'Browser Employer', 'email' => 'owner@browser.example', 'role' => 'employer']);
-$employer = Employer::create(['user_id' => $owner->id, 'company_name' => 'Browser Company']);
+$employer = Employer::create(['user_id' => $owner->id, 'company_name' => 'Browser Company', 'verification_status' => 'verified']);
 $candidate = User::factory()->create(['name' => 'Browser Candidate', 'email' => 'candidate@browser.example', 'role' => 'applicant']);
 $candidate->applicantProfile()->create(['headline' => 'Support specialist', 'summary' => 'Professional browser summary', 'experience' => 'Support volunteering', 'skills' => ['Excel']]);
 $accommodation = Accommodation::create(['slug' => 'accessible-restroom', 'label' => 'Accessible restroom']);
@@ -36,7 +36,7 @@ $candidate->applicantProfile->accommodations()->attach($accommodation);
 foreach (range(1, 27) as $i) {
     $job = $employer->jobListings()->create([
         'title' => 'Browser Support '.$i, 'location' => 'Manila', 'employment_type' => $i <= 16 ? 'Full Time' : 'Contract',
-        'work_mode' => 'Remote', 'description' => 'Support customers with accessible service.', 'status' => 'open', 'flexible_schedule' => true,
+        'work_mode' => 'Remote', 'description' => 'Support customers with accessible service.', 'status' => 'open', 'moderation_status' => 'approved', 'flexible_schedule' => true,
     ]);
     $job->accommodations()->attach($accommodation);
     $candidate->savedJobs()->attach($job);
@@ -47,3 +47,7 @@ foreach (range(1, 14) as $i) {
     Application::create(['user_id' => $person->id, 'job_listing_id' => 1, 'status' => 'submitted']);
 }
 echo 'Isolated browser fixtures ready: '.DB::table('job_listings')->count()." jobs.\n";
+// Additional Phase 2 fixtures are test-only; no privileged demo account is seeded in real installations.
+User::factory()->create(['name' => 'Browser Admin', 'email' => 'admin@browser.example', 'role' => 'admin']);
+$pendingOwner = User::factory()->create(['name' => 'Pending Owner', 'email' => 'pending@browser.example', 'role' => 'employer']);
+Employer::create(['user_id' => $pendingOwner->id, 'company_name' => 'Pending Browser Company', 'description' => 'Company awaiting verification.', 'location' => 'Manila']);

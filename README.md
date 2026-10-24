@@ -2,7 +2,7 @@
 
 An inclusive job platform for persons with disabilities in the Philippines. React/Vite provides the browser application; Laravel 12, Sanctum session authentication, and MySQL/MariaDB provide the API and persistent data.
 
-Phase 1.5 fixes the Phase 1 audit findings. Phase 2 has not been implemented. See [PHASE1-SETUP.md](PHASE1-SETUP.md) for API, privacy, and deployment details and [PWDWORK_IMPLEMENTATION_REPORT.md](PWDWORK_IMPLEMENTATION_REPORT.md) for verification results and limitations.
+Phase 2 adds administration, employer verification, job moderation, user restrictions, reports, notifications, and audit history. See [PHASE2-SETUP.md](PHASE2-SETUP.md) for the safe upgrade, first-admin provisioning and new APIs; [PHASE1-SETUP.md](PHASE1-SETUP.md) covers the retained baseline. Verification and limitations are recorded in [PWDWORK_IMPLEMENTATION_REPORT.md](PWDWORK_IMPLEMENTATION_REPORT.md).
 
 ## Requirements
 
@@ -31,9 +31,9 @@ php artisan migrate:status
 php artisan migrate
 ```
 
-Laravel migrations are the authoritative schema. Existing installations should back up first, inspect pending migrations, and apply them using the same additive command. The Phase 1.5 migration adds nullable experience and an accommodation-sharing flag defaulting to false; it never rewrites application statuses. The historical database/sql/pwdwork.sql import is retired and contains comments only.
+Laravel migrations are the authoritative schema. Existing installations should back up first, inspect pending migrations, and apply them using the same additive command. The Phase 2 migration preserves all existing business records and availability/application statuses, but existing jobs default to pending moderation and stop appearing publicly until approved. Review this intentional visibility change before upgrading. The historical database/sql/pwdwork.sql import is retired and contains comments only.
 
-Optional demo data: run `php artisan db:seed` only in an explicitly disposable local demo database. The seeder preserves passwords but can update matching demo profiles/jobs/statuses, so it is unsuitable for real data. Demo emails and the password `password` are development fixtures. No production administrator is automatically provisioned.
+Optional demo data: run `php artisan db:seed` only in an explicitly disposable local demo database. The seeder preserves passwords but can update matching demo profiles/jobs/statuses, so it is unsuitable for real data. Demo non-admin accounts use development credentials; their companies/jobs require review. The seeder no longer provisions privileged accounts. Existing historical demo administrators are preserved and must be secured by the operator. Create a new admin through `php artisan pwdwork:provision-admin` in an authorized interactive backend console; passwords are prompted privately and existing accounts are never overwritten.
 
 ## Run locally
 
@@ -82,6 +82,6 @@ Production needs HTTPS, APP_ENV=production, APP_DEBUG=false, secure session cook
 
 ## Scope
 
-Implemented: registration/login/logout, password recovery, persisted professional profiles, job search and combined filters, employer listings, saved jobs, applications, distinct shortlisting/hiring, interviews, applicant-controlled accommodation sharing, and pagination.
+Implemented: registration/login/logout, password recovery, persisted professional profiles, job search and combined filters, employer listings, saved jobs, applications, distinct shortlisting/hiring, interviews, applicant-controlled accommodation sharing, pagination, protected admin statistics/queues, employer verification, job moderation, account suspension/reactivation, private reports, audit logs, and in-app notifications. Optional decision emails use a configurable queue worker.
 
-Deferred to later phases: admin verification/user/report workflows, resume uploads, notification management/delivery, and any new matching features. Existing resume references can be downloaded through the authorized employer endpoint when their private files exist. Manual accessibility and production service checks remain release requirements.
+Deferred to later phases: resume uploads and any new matching features. Existing resume references can be downloaded through the authorized employer endpoint when their private files exist. Manual accessibility, SMTP delivery, MySQL concurrency/load, and production hosting checks remain release requirements. Phase 2 has not been deployed and its migration is not automatically applied to an existing database by these implementation changes.

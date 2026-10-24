@@ -4,6 +4,8 @@ import { useAuth } from "../context/AuthContext.jsx";
 import { useResource } from "../hooks/useResource.js";
 import RequestState from "../components/RequestState.jsx";
 import { accommodationOptions } from "../services/filters.js";
+import { requestEmployerReview, fetchVerificationHistory } from "../services/moderation.js";
+import HistoryList from "../components/HistoryList.jsx";
 export default function ProfilePage() {
   const { user } = useAuth();
   const resource = useResource(
@@ -31,6 +33,15 @@ function Editor({ initial, employer }) {
     [message, setMessage] = useState("");
   const update = (field, value) =>
     setProfile((p) => ({ ...p, [field]: value }));
+  async function requestReview() {
+    setBusy(true); setError(""); setMessage("");
+    try {
+      await requestEmployerReview(profile.reviewVersion);
+      setProfile((await api.get("/profile")).data.profile);
+      setMessage("Your company is back in the verification queue.");
+    } catch (exception) { setError(apiErrorMessage(exception)); }
+    finally { setBusy(false); }
+  }
   async function save(event) {
     event.preventDefault();
     setBusy(true);
@@ -64,10 +75,15 @@ function Editor({ initial, employer }) {
       {error && <p role="alert">{error}</p>}
       <p role="status">{message}</p>
       {employer ? (
+        <div>
         <p>
           Employer verification: {profile.verificationStatus}. This does not
           verify individual accommodations.
         </p>
+        {profile.verificationReason && <p>Review reason: {profile.verificationReason}</p>}
+        <p>Changes to verified company details require another review. Save corrected details before requesting review of a rejected registration.</p>
+        {profile.verificationStatus === "rejected" && <button type="button" onClick={requestReview} disabled={busy}>Request another verification review</button>}
+        </div>
       ) : (
         <p>Account email: {profile.email}</p>
       )}
@@ -131,6 +147,7 @@ function Editor({ initial, employer }) {
       <button className="primary-button" disabled={busy}>
         {busy ? "Saving..." : "Save profile"}
       </button>
+      {employer && <HistoryList fetcher={fetchVerificationHistory} scope={profile.reviewVersion} title="Company verification history" />}
     </form>
   );
 }

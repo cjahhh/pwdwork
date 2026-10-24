@@ -8,6 +8,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Employer extends Model
 {
+    public const VERIFICATION_STATUSES = ['pending', 'verified', 'rejected'];
+
     protected $fillable = [
         'user_id',
         'company_name',
@@ -17,7 +19,21 @@ class Employer extends Model
         'location',
         'description',
         'verification_status',
+        'verification_reason',
+        'verification_reviewed_at',
+        'verification_requested_at',
+        'review_version',
     ];
+
+    protected function casts(): array
+    {
+        return ['verification_reviewed_at' => 'datetime', 'verification_requested_at' => 'datetime'];
+    }
+
+    public function verificationHistory(): HasMany
+    {
+        return $this->hasMany(AdminAuditLog::class, 'target_id')->where('target_type', 'employer');
+    }
 
     public function user(): BelongsTo
     {

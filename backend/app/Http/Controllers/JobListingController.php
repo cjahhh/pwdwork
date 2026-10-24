@@ -4,8 +4,10 @@ namespace App\Http\Controllers;
 
 use App\Http\Controllers\Concerns\PaginatesCollections;
 use App\Models\Accommodation;
+use App\Models\AdminAuditLog;
 use App\Models\Application;
 use App\Models\JobListing;
+use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -19,7 +21,7 @@ class JobListingController extends Controller
     public function index(Request $request): JsonResponse
     {
         $request->validate(['query' => ['nullable', 'string', 'max:255'], 'location' => ['nullable', 'string', 'max:255']]);
-        $query = JobListing::query()->with(['employer', 'accommodations'])->where('status', 'open');
+        $query = JobListing::query()->with(['employer.user', 'accommodations'])->publiclyVisible();
 
         if ($request->filled('query')) {
             $term = $request->string('query')->toString();
@@ -58,9 +60,9 @@ class JobListingController extends Controller
 
     public function show(JobListing $jobListing): JsonResponse
     {
-        abort_unless($jobListing->status === 'open', 404);
+        abort_unless(JobListing::publiclyVisible()->whereKey($jobListing->id)->exists(), 404);
 
-        return response()->json(['job' => $this->jobPayload($jobListing->load(['employer', 'accommodations']))]);
+        return response()->json(['job' => $this->jobPayload($jobListing->load(['employer.user', 'accommodations']))]);
     }
 
     public function store(Request $request): JsonResponse
@@ -77,15 +79,19 @@ class JobListingController extends Controller
         ]);
 
         $job = DB::transaction(function () use ($request, $data) {
+            $owner = User::whereKey($request->user()->id)->lockForUpdate()->firstOrFail();
+            abort_unless($owner->status === 'active', 403);
+            $employer = $owner->employer()->lockForUpdate()->firstOrFail();
             $labels = $data['accommodations'] ?? [];
             unset($data['accommodations']);
-            $job = $request->user()->employer->jobListings()->create([...$data, 'status' => 'open']);
+            $job = $employer->jobListings()->create([...$data, 'status' => $employer->verification_status === 'verified' ? 'open' : 'closed', 'moderation_status' => 'pending']);
             $this->syncAccommodations($job, $labels);
+            AdminAuditLog::record($owner, 'job.created', 'job', $job->id, null, 'pending', 'New listing saved for administrative review.');
 
             return $job;
-        });
+        }, 3);
 
-        return response()->json(['job' => $this->jobPayload($job->load(['employer', 'accommodations']))], 201);
+        return response()->json(['job' => $this->jobPayload($job->refresh()->load(['employer.user', 'accommodations']), true)], 201);
     }
 
     public function employerListings(Request $request): JsonResponse
@@ -95,7 +101,7 @@ class JobListingController extends Controller
             'query' => ['nullable', 'string', 'max:255'],
         ]);
         $jobs = $request->user()->employer->jobListings()
-            ->with(['employer', 'accommodations']);
+            ->with(['employer.user', 'accommodations']);
         if (! empty($filters['status'])) {
             $jobs->where('status', $filters['status']);
         }
@@ -103,7 +109,7 @@ class JobListingController extends Controller
             $jobs->where('title', 'like', '%'.$filters['query'].'%');
         }
 
-        return $this->collectionResponse($request, $jobs->latest()->orderByDesc('job_listings.id'), 'jobs', fn ($job) => $this->jobPayload($job));
+        return $this->collectionResponse($request, $jobs->latest()->orderByDesc('job_listings.id'), 'jobs', fn ($job) => $this->jobPayload($job, true));
     }
 
     public function update(Request $request, JobListing $jobListing): JsonResponse
@@ -122,28 +128,60 @@ class JobListingController extends Controller
         ]);
         $labels = $data['accommodations'] ?? null;
         unset($data['accommodations']);
-        DB::transaction(function () use ($jobListing, $data, $labels) {
-            $jobListing->update($data);
-            if ($labels !== null) {
-                $this->syncAccommodations($jobListing, $labels);
+        DB::transaction(function () use ($request, $jobListing, $data, $labels) {
+            $owner = User::whereKey($request->user()->id)->lockForUpdate()->firstOrFail();
+            abort_unless($owner->status === 'active', 403);
+            $employer = $owner->employer()->lockForUpdate()->firstOrFail();
+            $job = JobListing::whereKey($jobListing->id)->lockForUpdate()->firstOrFail();
+            if (($data['status'] ?? null) === 'open') {
+                abort_unless($employer->verification_status === 'verified' && $job->moderation_status === 'approved', 422, 'Reopening requires employer verification and listing approval. Submit pending or rejected listings for review instead.');
             }
-        });
+            $before = $job->moderation_status;
+            $job->fill($data);
+            $contentChanged = $job->isDirty(['title', 'location', 'employment_type', 'work_mode', 'description', 'flexible_schedule']);
+            if ($labels !== null) {
+                $existing = $job->accommodations()->pluck('label')->sort()->values()->all();
+                $contentChanged = $contentChanged || $existing !== collect($labels)->unique()->sort()->values()->all();
+            }
+            if ($contentChanged && $job->moderation_status === 'approved') {
+                $job->moderation_status = 'pending';
+                $job->moderation_reason = null;
+            }
+            $job->review_version++;
+            $job->save();
+            if ($labels !== null) {
+                $this->syncAccommodations($job, $labels);
+            }
+            AdminAuditLog::record($owner, 'job.updated', 'job', $job->id, $before, $job->moderation_status, $contentChanged ? 'Listing content edited; approved content requires another review.' : 'Listing availability updated.');
+        }, 3);
 
-        return response()->json(['job' => $this->jobPayload($jobListing->load(['employer', 'accommodations']))]);
+        return response()->json(['job' => $this->jobPayload($jobListing->refresh()->load(['employer.user', 'accommodations']), true)]);
     }
 
     public function apply(Request $request, JobListing $jobListing): JsonResponse
     {
         abort_unless($request->user()->isApplicant(), 403);
-        abort_unless($jobListing->status === 'open', 422, 'This job is no longer accepting applications.');
         $request->validate([
             'cover_letter' => ['nullable', 'string', 'max:10000'],
             'share_accommodations' => ['sometimes', 'boolean'],
         ]);
-        $application = Application::query()->firstOrCreate(
-            ['user_id' => $request->user()->id, 'job_listing_id' => $jobListing->id],
-            ['cover_letter' => $request->input('cover_letter'), 'status' => 'submitted', 'share_accommodations' => $request->boolean('share_accommodations')]
-        );
+        $application = DB::transaction(function () use ($request, $jobListing) {
+            $applicant = User::whereKey($request->user()->id)->lockForUpdate()->firstOrFail();
+            abort_unless($applicant->status === 'active', 403);
+            $employer = $jobListing->employer;
+            $lockedOwner = User::whereKey($employer->user_id)->lockForUpdate()->firstOrFail();
+            $lockedEmployer = $employer->newQuery()->whereKey($employer->id)->lockForUpdate()->firstOrFail();
+            $job = JobListing::whereKey($jobListing->id)->lockForUpdate()->firstOrFail();
+            // Use current locking reads, including on MySQL REPEATABLE READ.
+            $lockedEmployer->setRelation('user', $lockedOwner);
+            $job->setRelation('employer', $lockedEmployer);
+            abort_unless($job->isPubliclyAvailable(), 422, 'This job is not currently accepting applications.');
+
+            return Application::query()->firstOrCreate(
+                ['user_id' => $applicant->id, 'job_listing_id' => $job->id],
+                ['cover_letter' => $request->input('cover_letter'), 'status' => 'submitted', 'share_accommodations' => $request->boolean('share_accommodations')]
+            );
+        }, 3);
 
         return response()->json(['application' => $application], $application->wasRecentlyCreated ? 201 : 200);
     }
@@ -190,7 +228,13 @@ class JobListingController extends Controller
             $data['interview_time'] = null;
             $data['interview_notes'] = null;
         }
-        $application->update($data);
+        DB::transaction(function () use ($request, $application, $data) {
+            $owner = User::whereKey($request->user()->id)->lockForUpdate()->firstOrFail();
+            abort_unless($owner->status === 'active', 403);
+            $record = Application::whereKey($application->id)->lockForUpdate()->firstOrFail();
+            abort_unless($record->jobListing->employer->user_id === $owner->id, 403);
+            $record->update($data);
+        }, 3);
 
         return response()->json(['application' => $this->employerApplicationPayload($application->fresh(['user.applicantProfile.accommodations', 'jobListing']))]);
     }
@@ -208,6 +252,7 @@ class JobListingController extends Controller
             'jobId' => $application->job_listing_id,
             'jobTitle' => $application->jobListing->title,
             'company' => $application->jobListing->employer?->company_name,
+            'employerId' => $application->jobListing->employer_id,
             'appliedAt' => $application->created_at?->toDateString(),
             'status' => $application->statusLabel(),
             'statusCode' => $application->status,
@@ -220,9 +265,14 @@ class JobListingController extends Controller
 
     public function saved(Request $request): JsonResponse
     {
-        $jobs = $request->user()->savedJobs()->with(['employer', 'accommodations'])->orderByDesc('saved_jobs.id');
+        $jobs = $request->user()->savedJobs()->with(['employer.user', 'accommodations'])->orderByDesc('saved_jobs.id');
 
-        return $this->collectionResponse($request, $jobs, 'jobs', fn ($job) => $this->jobPayload($job));
+        return $this->collectionResponse($request, $jobs, 'jobs', fn ($job) => $job->isPubliclyAvailable() ? $this->jobPayload($job) : [
+            'id' => $job->id, 'title' => 'Unavailable listing', 'company' => 'Listing currently unavailable',
+            'companyLogo' => 'CO', 'companyColor' => 'bg-gray-600', 'type' => 'Unavailable', 'mode' => '', 'location' => '',
+            'description' => 'This saved listing is closed or awaiting an administrative review. You can keep it saved or remove it.',
+            'status' => 'Unavailable', 'verified' => false, 'accommodations' => [], 'publicAvailable' => false,
+        ]);
     }
 
     public function savedState(Request $request, JobListing $jobListing): JsonResponse
@@ -264,7 +314,7 @@ class JobListingController extends Controller
             && Storage::disk(config('filesystems.resume_disk'))->exists($resumePath);
 
         return [
-            'id' => $application->id, 'name' => $application->user->name, 'email' => $application->user->email,
+            'id' => $application->id, 'accountId' => $application->user_id, 'name' => $application->user->name, 'email' => $application->user->email,
             'jobId' => $application->job_listing_id, 'jobTitle' => $application->jobListing->title,
             'appliedAt' => $application->created_at?->toDateString(),
             'status' => $application->statusLabel(true), 'statusCode' => $application->status,
@@ -283,6 +333,7 @@ class JobListingController extends Controller
 
     public function saveJob(Request $request, JobListing $jobListing): JsonResponse
     {
+        abort_unless(JobListing::publiclyVisible()->whereKey($jobListing->id)->exists(), 404);
         $request->user()->savedJobs()->syncWithoutDetaching([$jobListing->id]);
 
         return response()->json(['message' => 'Job saved.']);
@@ -316,10 +367,11 @@ class JobListingController extends Controller
         ])->map(fn ($value) => strtolower(trim((string) $value)))->implode('|');
     }
 
-    private function jobPayload(JobListing $job): array
+    private function jobPayload(JobListing $job, bool $owner = false): array
     {
         return [
             'id' => $job->id,
+            'employerId' => $job->employer_id,
             'title' => $job->title,
             'company' => $job->employer?->company_name,
             'companyLogo' => $job->employer?->company_logo ?: 'CO',
@@ -333,6 +385,8 @@ class JobListingController extends Controller
             'accommodationsVerified' => false,
             'description' => $job->description,
             'status' => ucfirst($job->status),
+            'publicAvailable' => $job->isPubliclyAvailable(),
+            ...($owner ? ['moderationStatus' => $job->moderation_status, 'moderationReason' => $job->moderation_reason, 'reviewVersion' => $job->review_version] : []),
             'accommodations' => $job->accommodations->map(fn ($accommodation) => ['label' => $accommodation->label, 'icon' => $accommodation->icon])->values(),
             'tagList' => collect([$job->work_mode])->merge($job->accommodations->pluck('label'))->values(),
         ];

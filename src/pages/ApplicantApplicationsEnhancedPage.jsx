@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { fetchApplicantApplications, updateApplicationSharing } from "../services/jobs.js";
 import { apiErrorMessage } from "../services/api.js";
 import { useAuth } from "../context/AuthContext.jsx";
@@ -48,6 +49,7 @@ export default function ApplicantApplicationsPage() {
             {item.company} | Applied {item.appliedAt}
           </p>
           <p>Status: {item.status}</p>
+          <p><Link to={`/reports?target_type=employer&target_id=${item.employerId}`}>Report a problem with this employer</Link></p>
           <label className="filter-option">
             <input type="checkbox" checked={item.shareAccommodations} disabled={busy !== null}
               onChange={(event) => share(item.applicationId, event.target.checked)} />

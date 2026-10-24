@@ -27,17 +27,20 @@ export function AuthProvider({ children }) {
     try {
       setUser(await fetchCurrentUser());
     } catch (e) {
-      if ([401, 419].includes(e.response?.status)) setUser(null);
+      if (e.response?.data?.code === "account_inactive") {
+        setUser(null);
+        setNotice(e.response.data.message);
+      } else if ([401, 419].includes(e.response?.status)) setUser(null);
       else setError(apiErrorMessage(e));
     } finally {
       setReady(true);
     }
   }, []);
   useEffect(() => {
-    const expired = () => {
+    const expired = (event) => {
       setUser(null);
       setError("");
-      setNotice("Your session has expired. Please sign in again.");
+      setNotice(event.detail?.message || "Your session has expired. Please sign in again.");
     };
     window.addEventListener("pwdwork:unauthorized", expired);
     if (window.BroadcastChannel) {

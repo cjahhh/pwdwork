@@ -302,6 +302,7 @@ export default function EmployerApplicantsEnhancedPage() {
                         Experience: {applicant.experience || "Not provided"}
                       </p>
                       {applicant.headline && <p>{applicant.headline}</p>}
+                      <p><Link to={`/reports?target_type=account&target_id=${applicant.accountId}`}>Report a problem with this hiring interaction</Link></p>
                       <p>Skills: {applicant.skills.length ? applicant.skills.join(", ") : "Not provided"}</p>
                       <p className="whitespace-pre-wrap">Professional summary: {applicant.summary || "Not provided"}</p>
                       <p className="whitespace-pre-wrap">Cover letter: {applicant.coverLetter || "Not provided"}</p>

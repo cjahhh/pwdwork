@@ -71,6 +71,11 @@ class User extends Authenticatable
         return $this->hasMany(UserNotification::class);
     }
 
+    public function reports(): HasMany
+    {
+        return $this->hasMany(UserReport::class, 'reporter_id');
+    }
+
     public function isApplicant(): bool
     {
         return $this->role === 'applicant';

@@ -210,6 +210,17 @@ button:disabled { opacity: .65; cursor: wait; }
 .page-shell h1 { font-size: 2rem; font-weight: 800; margin-bottom: 1rem; }
 .page-shell h2, legend { font-size: 1.15rem; font-weight: 750; }
 .panel { background: #fff; border: 1px solid #cbd5e1; border-radius: 1rem; padding: 1.5rem; margin-block: 1rem; min-width: 0; }
+.admin-nav { display: flex; flex-wrap: wrap; gap: .6rem; margin-block: 1.5rem; }
+.admin-nav a { border: 1px solid currentColor; padding: .6rem .85rem; border-radius: .6rem; font-weight: 700; }
+.admin-nav .admin-nav-active { text-decoration: underline; text-decoration-thickness: .2em; }
+.admin-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 13rem), 1fr)); gap: 1rem; }
+.admin-stats .panel { margin: 0; }
+.admin-filters { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr)); gap: 1rem; align-items: end; }
+.admin-details { display: grid; grid-template-columns: minmax(0, 1fr); gap: .3rem; margin-block: 1rem; }
+.admin-details dt { font-weight: 750; margin-top: .5rem; }
+.status-badge { display: inline-block; border: 1px solid currentColor; border-radius: 1rem; padding: .2rem .7rem; margin-block: .5rem; font-weight: 700; }
+.review-dialog { margin: auto; width: min(92vw, 52rem); max-height: 88vh; overflow-y: auto; overflow-wrap: anywhere; }
+.review-dialog textarea { min-height: 7rem; }
 .primary-button { background: #1e3a8a; color: #fff; border-radius: .65rem; padding: .7rem 1.25rem; font-weight: 750; }
 .filter-option { display: flex; gap: .75rem; align-items: center; padding-block: .5rem; min-height: 2.75rem; }
 .filter-option input { width: 1.2rem; height: 1.2rem; flex-shrink: 0; }

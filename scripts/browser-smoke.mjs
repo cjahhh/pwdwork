@@ -22,6 +22,7 @@ const env = { ...process.env, PWDWORK_BROWSER_TEST: "1", APP_ENV: "browser_test"
   SESSION_DOMAIN: "null", CACHE_STORE: "database", DB_CACHE_CONNECTION: "sqlite",
   QUEUE_CONNECTION: "database", DB_QUEUE_CONNECTION: "sqlite", PASSWORD_RESET_QUEUE_CONNECTION: "database",
   PASSWORD_RESET_QUEUE: "password-resets", MAIL_MAILER: "log", MAIL_LOG_CHANNEL: "stderr", LOG_CHANNEL: "stderr", BCRYPT_ROUNDS: "4",
+  ADMIN_NOTIFICATION_MAIL: "false",
   APP_CONFIG_CACHE: join(temp, "config.php"), APP_ROUTES_CACHE: join(temp, "routes.php"),
 };
 const processes = [];
@@ -62,6 +63,11 @@ class CDP {
         if (message.error) pending.reject(new Error(message.error.message)); else pending.resolve(message.result);
       }
       if (message.method === "Runtime.exceptionThrown") this.exceptions.push(message.params.exceptionDetails.text);
+      if (message.method === "Page.loadEventFired") this.loadSerial = (this.loadSerial || 0) + 1;
+      if (message.method === "Network.responseReceived" && message.params.response.url.endsWith("/api/login") && message.params.response.status === 429) {
+        const entry = Object.entries(message.params.response.headers).find(([name]) => name.toLowerCase() === "retry-after");
+        this.loginRetrySeconds = Number(entry?.[1]) || 60;
+      }
     };
   }
   send(method, params = {}) {
@@ -82,8 +88,15 @@ class CDP {
 }
 const check = async (condition, label) => waitFor(() => client.evaluate(condition), label);
 async function go(path) {
+  const previousLoad = client.loadSerial || 0;
   await client.send("Page.navigate", { url: "http://localhost:5173" + path });
-  await check(`location.pathname === ${JSON.stringify(path.split("?")[0])} && document.querySelector('main') && !document.body.innerText.includes('Loading account...')`, "route " + path);
+  await waitFor(() => (client.loadSerial || 0) > previousLoad, "document loaded " + path);
+  await check(`location.pathname === ${JSON.stringify(path.split("?")[0])} && document.querySelector('main') && document.querySelector('header')?.getAttribute('aria-busy') === 'false' && !document.body.innerText.includes('Loading account...')`, "route " + path);
+}
+async function reload() {
+  const previousLoad = client.loadSerial || 0;
+  await client.send("Page.reload");
+  await waitFor(() => (client.loadSerial || 0) > previousLoad, "reloaded document");
 }
 async function fill(selector, value) {
   await client.evaluate(`(() => { const el = document.querySelector(${JSON.stringify(selector)}); if (!el) throw new Error('Missing input'); const proto = el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype; Object.getOwnPropertyDescriptor(proto, 'value').set.call(el, ${JSON.stringify(value)}); el.dispatchEvent(new Event('input', { bubbles: true })); })()`);
@@ -91,15 +104,41 @@ async function fill(selector, value) {
 async function click(text, scope = "main") {
   await client.evaluate(`(() => { const button = [...document.querySelectorAll(${JSON.stringify(scope + " button")})].find(el => el.textContent.trim() === ${JSON.stringify(text)} && !el.disabled); if (!button) throw new Error('Missing enabled button: ' + ${JSON.stringify(text)}); button.click(); })()`);
 }
-async function login(email, password = "password") {
+async function select(selector, value) {
+  await client.evaluate(`(() => { const el = document.querySelector(${JSON.stringify(selector)}); if (!el) throw new Error('Missing select'); el.value = ${JSON.stringify(value)}; el.dispatchEvent(new Event('change', { bubbles: true })); })()`);
+}
+async function reviewFirst(kind) {
+  await check(`[...document.querySelectorAll('main article button')].some(el => el.textContent.startsWith('Review ${kind} #'))`, "review control");
+  await client.evaluate(`[...document.querySelectorAll('main article button')].find(el => el.textContent.startsWith('Review ${kind} #')).click()`);
+  await check("!!document.querySelector('dialog[open] form')", "review dialog");
+  assert.ok(await client.evaluate("document.querySelector('dialog[open]').contains(document.activeElement)"), "Review dialog did not receive focus");
+}
+async function confirmReview(status, reason = "") {
+  await select("dialog[open] form select", status);
+  if (reason) await fill("dialog[open] form textarea", reason);
+  await click("Confirm decision", "dialog[open]");
+  await check("!document.querySelector('dialog[open]')", "decision saved");
+}
+async function login(email, password = "password", expectInactive = false) {
   await go("/login");
   await check("!!document.querySelector('#login-email')", "login form");
   await fill("#login-email", email);
   await fill("#login-password", password);
-  await click("Continue");
-  await check("!location.pathname.includes('login')", "login success");
+  for (let attempt = 0; attempt < 3; attempt++) {
+    client.loginRetrySeconds = 0;
+    await fill("#login-email", email);
+    await fill("#login-password", password);
+    await click("Continue");
+    await check(`${expectInactive ? "document.body.innerText.includes('This account is not active.')" : "!location.pathname.includes('login')"} || document.body.innerText.includes('Too many attempts.')`, "login result");
+    if (!await client.evaluate("document.body.innerText.includes('Too many attempts.')")) return;
+    const waitSeconds = client.loginRetrySeconds || 60;
+    console.log(`Waiting ${waitSeconds + 1}s for the configured login rate-limit window.`);
+    await delay((waitSeconds + 1) * 1000);
+  }
+  throw new Error("The configured login rate limit did not release after retries.");
 }
 async function logout() {
+  await check("[...document.querySelectorAll('header button')].some(el => el.textContent.trim() === 'Log out')", "authenticated navigation ready");
   await click("Log out", "header");
   await check("(location.pathname === '/' || location.pathname === '/login') && ![...document.querySelectorAll('header button')].some(el => el.textContent.trim() === 'Log out')", "logout redirect");
 }
@@ -146,7 +185,7 @@ try {
   await check("document.body.innerText.includes('Page 1 of 3')", "saved jobs page");
   await click("Next page", 'nav[aria-label="Saved job pages"]');
   await check("document.body.innerText.includes('Page 2 of 3')", "saved jobs next page");
-  await client.send("Page.reload");
+  await reload();
   await check("document.body.innerText.includes('Saved jobs') && document.body.innerText.includes('Page 1 of 3')", "cookie refresh restoration");
   await go("/applicant/applications");
   await check("document.body.innerText.includes('Page 1 of 3')", "applications loaded");
@@ -221,6 +260,99 @@ try {
   await check("document.body.innerText.includes('11 matching jobs')", "offline retry");
   assert.deepEqual(client.exceptions, [], "Uncaught browser exceptions");
   passed("320px reflow, offline errors/retry and no uncaught browser exceptions");
+
+  await client.send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
+  await login("admin@browser.example");
+  await go("/admin");
+  await check("document.body.innerText.includes('Registered employers') && document.querySelectorAll('.admin-stats dd').length === 11", "live admin overview");
+  await go("/admin/employers?status=pending");
+  await check("document.body.innerText.includes('Pending Browser Company')", "pending employer queue");
+  await reviewFirst("employer");
+  await confirmReview("rejected", "Please clarify your company location.");
+  await logout();
+  await login("pending@browser.example");
+  await go("/employer/profile");
+  await check("document.body.innerText.includes('Please clarify your company location.')", "employer rejection reason");
+  await fill("main form input", "Corrected Browser Company");
+  await click("Save profile");
+  await check("document.body.innerText.includes('Profile saved to your account.')", "company correction");
+  await click("Request another verification review");
+  await check("document.body.innerText.includes('Your company is back in the verification queue.')", "employer resubmission");
+  await go("/employer/listings");
+  await click("+ Post a job");
+  await fill("main form input", "New Browser Moderated Job");
+  await fill("main form label:nth-child(2) input", "Manila");
+  await fill("main form textarea", "A complete and accessible support job description.");
+  await click("Save listing for review");
+  await check("document.body.innerText.includes('New Browser Moderated Job') && document.body.innerText.includes('Moderation: pending')", "unverified draft saved");
+  assert.equal(await client.evaluate("[...document.querySelectorAll('main article button')].find(el => el.textContent === 'Submit for review')?.disabled"), true);
+  await logout();
+  await login("admin@browser.example");
+  await go("/admin/employers?status=pending");
+  await check("document.body.innerText.includes('Corrected Browser Company')", "corrected company review");
+  await reviewFirst("employer"); await confirmReview("verified"); await logout();
+  await login("pending@browser.example");
+  await go("/notifications");
+  await check("document.body.innerText.includes('Employer verification verified')", "decision notification persisted");
+  await go("/employer/listings");
+  await check("document.body.innerText.includes('New Browser Moderated Job')", "draft reloaded");
+  await click("Submit for review");
+  await check("document.body.innerText.includes('Your listing is awaiting administrative approval.')", "verified employer submitted listing");
+  await logout(); await login("admin@browser.example");
+  await go("/admin/jobs?status=pending");
+  await check("document.body.innerText.includes('New Browser Moderated Job')", "job approval queue");
+  await reviewFirst("job"); await confirmReview("approved");
+  await go("/jobs?q=New+Browser+Moderated+Job");
+  await check("document.body.innerText.includes('1 matching jobs')", "approved job publicly visible");
+  passed("admin overview, employer rejection/correction/review/notification and moderated publication");
+
+  await logout(); await login("candidate@browser.example");
+  await go("/jobs/28");
+  await check("document.body.innerText.includes('New Browser Moderated Job')", "approved detail");
+  await client.evaluate("[...document.querySelectorAll('main a')].find(el => el.textContent === 'Report this listing').click()");
+  await check("document.body.innerText.includes('Submit a report')", "report form");
+  await fill("main form textarea", "The accessibility description should be reviewed for accuracy.");
+  await click("Submit report");
+  await check("document.body.innerText.includes('Report submitted.')", "report created");
+  await logout(); await login("admin@browser.example");
+  await go("/admin/reports?status=pending"); await reviewFirst("report");
+  await fill("dialog[open] form label:last-of-type textarea", "PRIVATE_BROWSER_NOTE");
+  await confirmReview("resolved", "Investigated the listing and recorded the outcome.");
+  await go("/admin/jobs?job_id=28"); await reviewFirst("job");
+  await confirmReview("hidden", "Accessibility claims require further investigation.");
+  await go("/jobs?q=New+Browser+Moderated+Job");
+  await check("document.body.innerText.includes('0 matching jobs')", "hidden job removed from search");
+  await go("/admin/audit");
+  await check("document.body.innerText.includes('job.hidden') && document.body.innerText.includes('report.resolved')", "audits persisted");
+  await go("/admin/users?query=registered%40browser.example"); await reviewFirst("user");
+  await confirmReview("suspended", "Account temporarily restricted following a reviewed complaint.");
+  await logout();
+  await login("registered@browser.example", "changed-password", true);
+  await login("admin@browser.example");
+  await go("/admin/users?query=registered%40browser.example"); await reviewFirst("user");
+  await confirmReview("active", "The account restriction has been reviewed and lifted.");
+  await logout(); await login("registered@browser.example", "changed-password"); await logout();
+  await login("candidate@browser.example"); await go("/reports");
+  await check("document.body.innerText.includes('Status: Resolved')", "reporter sees outcome");
+  assert.equal(await client.evaluate("document.body.innerText.includes('PRIVATE_BROWSER_NOTE')"), false);
+  await logout();
+  passed("private reporting, resolution, hiding, audit logs, suspension and reactivation");
+
+  await login("admin@browser.example"); await go("/admin");
+  await check("document.querySelectorAll('.admin-stats dd').length === 11", "admin stats restored");
+  await client.send("Emulation.setDeviceMetricsOverride", { width: 320, height: 800, deviceScaleFactor: 1, mobile: false });
+  assert.ok(await client.evaluate("document.documentElement.scrollWidth <= 320"), "Admin overflow at 320px");
+  await client.evaluate("document.querySelector('aside details').open = true");
+  const dark = await client.evaluate("document.documentElement.classList.contains('dark-mode')");
+  await click(`Dark mode: ${dark ? "On" : "Off"}`, "aside");
+  await check(`document.documentElement.classList.contains('dark-mode') === ${!dark}`, "admin dark setting");
+  await click("High contrast: Off", "aside");
+  await check("document.documentElement.classList.contains('high-contrast')", "admin contrast setting");
+  await reload();
+  await check("document.documentElement.classList.contains('high-contrast') && document.querySelectorAll('.admin-stats dd').length === 11", "persistent accessibility preferences");
+  assert.ok(await client.evaluate("document.documentElement.scrollWidth <= 320"), "High-contrast admin overflow");
+  assert.deepEqual(client.exceptions, [], "Uncaught Phase 2 browser exceptions");
+  passed("admin narrow-screen layout and persistent dark/high-contrast settings");
   console.log("Browser smoke checks passed. Only isolated temporary SQLite fixtures were used.");
 } catch (error) {
   if (client) {
@@ -237,7 +369,7 @@ try {
   for (const child of processes.reverse()) {
     if (child.exitCode === null) child.kill();
   }
-  await delay(500);
+  await delay(2000);
   // Validate the absolute cleanup target before removing this run's own fixtures.
   if (resolve(dirname(temp)) === resolve(tmpdir()) && basename(temp).startsWith("pwdwork-browser-")) {
     try { rmSync(temp, { recursive: true, force: true, maxRetries: 3, retryDelay: 200 }); }

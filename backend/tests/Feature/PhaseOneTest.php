@@ -30,9 +30,9 @@ class PhaseOneTest extends TestCase
     private function job(?User $owner = null, array $fields = []): JobListing
     {
         $owner ??= $this->account('employer');
-        $employer = Employer::firstOrCreate(['user_id' => $owner->id], ['company_name' => 'Test Company']);
+        $employer = Employer::firstOrCreate(['user_id' => $owner->id], ['company_name' => 'Test Company', 'verification_status' => 'verified']);
 
-        return $employer->jobListings()->create(array_merge(['title' => 'Support role', 'location' => 'Manila', 'employment_type' => 'Full Time', 'work_mode' => 'Remote', 'description' => 'Customer support', 'status' => 'open'], $fields));
+        return $employer->jobListings()->create(array_merge(['title' => 'Support role', 'location' => 'Manila', 'employment_type' => 'Full Time', 'work_mode' => 'Remote', 'description' => 'Customer support', 'status' => 'open', 'moderation_status' => 'approved'], $fields));
     }
 
     public function test_empty_jobs_are_empty_and_bad_filters_are_rejected(): void

@@ -11,7 +11,7 @@ const navLinkClass = ({ isActive }) =>
 
 function Navbar() {
   const [open, setOpen] = useState(false);
-  const { user, logout } = useAuth();
+  const { user, ready, logout } = useAuth();
   const { showToast } = useUi();
   const navigate = useNavigate();
   const navigation =
@@ -20,6 +20,8 @@ function Navbar() {
           { label: "Company Profile", to: "/employer/profile" },
           { label: "Job Listings", to: "/employer/listings" },
           { label: "Applicants", to: "/employer/applicants" },
+          { label: "Reports", to: "/reports" },
+          { label: "Notifications", to: "/notifications" },
         ]
       : user?.role === "applicant"
         ? [
@@ -27,8 +29,13 @@ function Navbar() {
             { label: "Profile", to: "/applicant/profile" },
             { label: "Applications", to: "/applicant/applications" },
             { label: "Saved Jobs", to: "/applicant/saved-jobs" },
+            { label: "Reports", to: "/reports" },
+            { label: "Notifications", to: "/notifications" },
           ]
-        : [
+        : user?.role === "admin" ? [
+            { label: "Admin Dashboard", to: "/admin" },
+            { label: "Notifications", to: "/notifications" },
+          ] : [
             { label: "Home", to: "/", end: true },
             { label: "Find Jobs", to: "/jobs" },
             { label: "For Employers", to: "/employers" },
@@ -48,7 +55,7 @@ function Navbar() {
   }
 
   return (
-    <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-gray-200 shadow-sm">
+    <header aria-busy={!ready} className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-gray-200 shadow-sm">
       <nav
         className="max-w-[1440px] mx-auto px-6 lg:px-12 py-4 flex items-center justify-between gap-6"
         aria-label="Main Navigation"
@@ -79,7 +86,7 @@ function Navbar() {
         </Link>
 
         <ul
-          className="hidden lg:flex items-center gap-8 font-bold text-base text-gray-700"
+          className="hidden xl:flex flex-1 flex-wrap justify-center items-center gap-x-4 gap-y-2 font-bold text-sm text-gray-700"
           role="list"
         >
           {navigation.map((item) => (
@@ -134,7 +141,7 @@ function Navbar() {
           )}
           <button
             type="button"
-            className="lg:hidden shrink-0 w-11 h-11 rounded-xl border-2 border-brand-blue text-brand-blue font-black"
+            className="xl:hidden shrink-0 w-11 h-11 rounded-xl border-2 border-brand-blue text-brand-blue font-black"
             aria-expanded={open}
             aria-controls="mobile-nav"
             onClick={() => setOpen((current) => !current)}
@@ -148,7 +155,7 @@ function Navbar() {
       {open ? (
         <div
           id="mobile-nav"
-          className="lg:hidden border-t border-gray-200 bg-white px-6 py-4 space-y-3"
+          className="xl:hidden border-t border-gray-200 bg-white px-6 py-4 space-y-3"
         >
           {navigation.map((item) => (
             <NavLink

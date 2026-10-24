@@ -16,9 +16,9 @@ function JobCard({ job }) {
         </div>
 
         <h3 className="text-xl font-black text-brand-dark leading-snug">
-          <Link to={`/jobs/${job.id}`} className="hover:text-brand-blue transition">
+          {job.publicAvailable === false ? job.title : <Link to={`/jobs/${job.id}`} className="hover:text-brand-blue transition">
             {job.title}
-          </Link>
+          </Link>}
         </h3>
         <p className="text-base font-bold text-gray-700 mt-1 flex items-center gap-2">{job.company}{job.verified ? <span className="inline-flex items-center gap-1 rounded-full bg-teal-50 text-brand-teal border border-teal-200 px-2 py-0.5 text-xs font-extrabold" title="Employer verification completed">✓ Verified employer</span> : null}</p>
         <p className="text-sm font-semibold text-gray-500 flex items-center gap-1.5 mt-1">
@@ -45,7 +45,7 @@ function JobCard({ job }) {
         </div>
       </div>
 
-      <Link
+      {job.publicAvailable === false ? <p>This saved listing is currently unavailable.</p> : <Link
         to={`/jobs/${job.id}`}
         className="w-full bg-brand-blue hover:bg-brand-blue-dark text-white font-black text-base py-3.5 rounded-2xl shadow-md transition duration-150 flex items-center justify-center gap-2"
       >
@@ -53,7 +53,7 @@ function JobCard({ job }) {
         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M14 5l7 7m0 0l-7 7m7-7H3" />
         </svg>
-      </Link>
+      </Link>}
     </article>
   );
 }

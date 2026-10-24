@@ -15,6 +15,10 @@ class EnsureUserRole
     {
         $user = $request->user();
 
+        if ($user && $user->status !== 'active') {
+            return response()->json(['message' => 'This account is suspended or inactive. Contact support if you need help.', 'code' => 'account_inactive'], 403);
+        }
+
         if (! $user || (! in_array($user->role, $roles, true) || $user->status !== 'active')) {
             return response()->json([
                 'message' => 'You are not allowed to access this resource.',

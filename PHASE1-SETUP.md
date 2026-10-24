@@ -1,5 +1,7 @@
 # Phase 1.5 setup and integration
 
+Phase 2 extends this baseline. [PHASE2-SETUP.md](PHASE2-SETUP.md) supersedes publication rules: public jobs now require moderation approval, employer verification, open availability, and an active employer account. Admin/report/notification workflows are implemented there; historical deferred-feature notes in this baseline describe Phase 1.5 only.
+
 Installation and local commands are in [README.md](README.md). This document defines the behavior added to the existing Phase 1 implementation. MySQL-backed Laravel models are the source of truth. Browser storage holds accessibility preferences only; historical browser records are not automatically imported.
 
 ## Data preservation and schema

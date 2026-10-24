@@ -5,6 +5,9 @@ import { useUi } from "../context/UiContext.jsx";
 import { apiErrorMessage } from "../services/api.js";
 import { usePaginatedResource } from "../hooks/usePaginatedResource.js";
 import Pagination from "../components/Pagination.jsx";
+import ReviewDialog from "../components/ReviewDialog.jsx";
+import HistoryList from "../components/HistoryList.jsx";
+import { submitListing, fetchJobHistory } from "../services/moderation.js";
 import RequestState from "../components/RequestState.jsx";
 import { accommodationOptions, employmentTypes } from "../services/filters.js";
 import {
@@ -38,6 +41,7 @@ export default function EmployerListingsEnhancedPage() {
   const [editingId, setEditingId] = useState(null);
   const [showForm, setShowForm] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [historyTarget, setHistoryTarget] = useState(null);
 
   const visible = listings;
   const updateDraft = (field, value) =>
@@ -65,7 +69,7 @@ export default function EmployerListingsEnhancedPage() {
       resource.reload();
       showToast(
         editingId ? "Listing updated" : "Listing created",
-        "The change is now visible to jobseekers.",
+        "Publication requires a verified employer and an approved listing. Content edits are reviewed again.",
       );
       resetForm();
     } catch (e) {
@@ -87,6 +91,15 @@ export default function EmployerListingsEnhancedPage() {
     } finally {
       setSaving(false);
     }
+  }
+
+  async function submitForReview(listing) {
+    setSaving(true); setError("");
+    try {
+      await submitListing(listing.id, listing.reviewVersion);
+      resource.reload(); showToast("Review requested", "Your listing is awaiting administrative approval.");
+    } catch (exception) { setError(apiErrorMessage(exception)); }
+    finally { setSaving(false); }
   }
 
   return (
@@ -112,6 +125,7 @@ export default function EmployerListingsEnhancedPage() {
               Create and maintain clear roles with clear accessibility
               expectations.
             </p>
+            <p>Unverified companies can save closed listings. Only verified companies can submit for publication, and an admin must approve each listing.</p>
           </div>
           <button
             type="button"
@@ -245,7 +259,7 @@ export default function EmployerListingsEnhancedPage() {
                   ? "Saving..."
                   : editingId
                     ? "Save changes"
-                    : "Publish listing"}
+                    : "Save listing for review"}
               </button>
             </div>
           </form>
@@ -284,11 +298,14 @@ export default function EmployerListingsEnhancedPage() {
                   <p className="text-sm font-semibold text-gray-600 mt-1">
                     {listing.location} · {listing.type} · {listing.mode}
                   </p>
+                  <p>Moderation: {listing.moderationStatus} · Company verification: {listing.verificationStatus}</p>
+                  {listing.moderationReason && <p>Review reason: {listing.moderationReason}</p>}
+                  {listing.moderationStatus === "hidden" && <p>This listing is hidden. Use Reports to contact administrators if you need another review.</p>}
                   <p className="text-sm text-gray-600 mt-3 max-w-2xl">
                     {listing.description}
                   </p>
                 </div>
-                <div className="flex gap-2 self-start">
+                <div className="flex flex-wrap gap-2 self-start">
                   <button
                     type="button"
                     onClick={() => beginEdit(listing)}
@@ -298,7 +315,7 @@ export default function EmployerListingsEnhancedPage() {
                   </button>
                   <button
                     type="button"
-                    disabled={saving || resource.loading}
+                    disabled={saving || resource.loading || (listing.status === "Closed" && (listing.moderationStatus !== "approved" || listing.verificationStatus !== "verified"))}
                     onClick={() => toggleStatus(listing)}
                     className="border border-gray-300 text-gray-700 font-extrabold px-4 py-2 rounded-xl"
                   >
@@ -306,12 +323,18 @@ export default function EmployerListingsEnhancedPage() {
                       ? "Close listing"
                       : "Reopen listing"}
                   </button>
+                  {["pending", "rejected"].includes(listing.moderationStatus) && (listing.status === "Closed" || listing.moderationStatus === "rejected") &&
+                    <button type="button" disabled={saving || listing.verificationStatus !== "verified"} onClick={() => submitForReview(listing)}>Submit for review</button>}
+                  <button type="button" onClick={() => setHistoryTarget(listing.id)}>View moderation history</button>
                 </div>
               </div>
             </article>
           ))}
         </div>
         <Pagination resource={resource} label="Employer listing pages" disabled={saving} />
+        {historyTarget && <ReviewDialog title="Listing moderation history" onClose={() => setHistoryTarget(null)}>
+          <HistoryList fetcher={(params) => fetchJobHistory(historyTarget, params)} scope={historyTarget} />
+        </ReviewDialog>}
       </div>
     </main>
   );

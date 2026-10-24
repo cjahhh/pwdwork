@@ -1,22 +1,46 @@
-function AdminDashboardPage() {
-  return (
-    <main className="bg-brand-gray-bg py-16">
-      <div className="max-w-4xl mx-auto px-6 space-y-4">
-        <h1 className="text-3xl font-black text-brand-dark">Admin Dashboard</h1>
-        <p className="text-gray-600">
-          Employer verification, user management, and report cards will be added in a later phase.
-        </p>
-        <div className="grid md:grid-cols-3 gap-4">
-          {["Verification", "Users", "Reports"].map((item) => (
-            <div key={item} className="bg-white p-6 rounded-2xl border border-gray-200 shadow-soft-lg">
-              <h2 className="font-black text-brand-blue">{item}</h2>
-              <p className="text-sm text-gray-600 mt-2">Coming soon.</p>
-            </div>
-          ))}
-        </div>
-      </div>
-    </main>
-  );
-}
+import { Link } from "react-router-dom";
+import { useResource } from "../hooks/useResource.js";
+import RequestState from "../components/RequestState.jsx";
+import { fetchOverview, fetchAdminEmployers, fetchAdminJobs, fetchAdminReports, fetchAuditLogs } from "../services/admin.js";
 
-export default AdminDashboardPage;
+const cards = [
+  ["jobseekers", "Registered jobseekers"], ["employers", "Registered employers"],
+  ["verifiedEmployers", "Verified employers"], ["pendingEmployers", "Pending verifications"],
+  ["rejectedEmployers", "Rejected verifications"], ["jobListings", "Total job listings"],
+  ["activeApprovedJobs", "Active approved jobs"], ["pendingJobs", "Pending job approvals"],
+  ["applications", "Submitted applications"], ["pendingReports", "Pending user reports"],
+  ["suspendedAccounts", "Suspended accounts"],
+];
+export default function AdminDashboardPage() {
+  const resource = useResource(async () => {
+    const [stats, employers, jobs, reports, audit] = await Promise.all([
+      fetchOverview(), fetchAdminEmployers({ status: "pending", per_page: 3 }),
+      fetchAdminJobs({ status: "pending", per_page: 3 }), fetchAdminReports({ status: "pending", per_page: 3 }),
+      fetchAuditLogs({ per_page: 3 }),
+    ]);
+    return { stats, employers: employers.employers, jobs: jobs.jobs, reports: reports.reports, audit: audit.logs };
+  });
+  return <section>
+    <h1>Admin dashboard overview</h1>
+    <p>Review registrations, publication requests, and complaints. Counts include actual stored records; active jobs additionally require a verified, active employer.</p>
+    <button type="button" onClick={resource.reload} disabled={resource.loading}>Refresh overview</button>
+    <RequestState resource={resource} />
+    {resource.data && <>
+      <dl className="admin-stats">
+        {cards.map(([key, label]) => <div key={key} className="panel"><dt>{label}</dt><dd className="text-3xl font-black">{resource.data.stats[key]}</dd></div>)}
+      </dl>
+      <div className="grid gap-5 md:grid-cols-2">
+        {[
+          ["Employer verification queue", "employers", resource.data.employers, (item) => item.companyName],
+          ["Pending job approvals", "jobs", resource.data.jobs, (item) => item.title],
+          ["Recent user reports", "reports", resource.data.reports, (item) => `Report #${item.id}: ${item.category.replaceAll("_", " ")}`],
+          ["Recent administrative activities", "audit", resource.data.audit, (item) => `${item.action}: ${item.targetType} #${item.targetId}`],
+        ].map(([title, path, items, label]) => <section key={path} className="panel">
+          <h2>{title}</h2>
+          {items.length ? <ul className="my-3 space-y-2">{items.map((item) => <li key={item.id}>{label(item)}</li>)}</ul> : <p>No records in this queue.</p>}
+          <Link className="font-bold underline" to={`/admin/${path}${path === "audit" ? "" : "?status=pending"}`}>Open {title.toLowerCase()}</Link>
+        </section>)}
+      </div>
+    </>}
+  </section>;
+}

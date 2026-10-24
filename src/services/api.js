@@ -12,17 +12,18 @@ export async function prepareCsrf() {
 api.interceptors.response.use(
   (response) => response,
   (error) => {
+    const inactive = error.response?.data?.code === "account_inactive";
     if (
-      [401, 419].includes(error.response?.status) &&
+      inactive || ([401, 419].includes(error.response?.status) &&
       ![
         "/user",
         "/login",
         "/register",
         "/forgot-password",
         "/reset-password",
-      ].includes(error.config?.url)
+      ].includes(error.config?.url))
     )
-      window.dispatchEvent(new Event("pwdwork:unauthorized"));
+      window.dispatchEvent(new CustomEvent("pwdwork:unauthorized", { detail: { message: inactive ? error.response.data.message : "Your session has expired. Please sign in again." } }));
     return Promise.reject(error);
   },
 );
@@ -30,6 +31,7 @@ export function apiErrorMessage(
   error,
   fallback = "The request failed. Please try again.",
 ) {
+  if (error.response?.data?.code === "account_inactive") return error.response.data.message;
   if (error.response?.status === 401)
     return "Your session has expired. Please sign in again.";
   if (error.response?.status === 419)
