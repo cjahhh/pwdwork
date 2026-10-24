@@ -1,6 +1,8 @@
 <?php
 
 return [
+    // Resumes stay private; an authorized controller streams downloads.
+    'resume_disk' => env('RESUME_DISK', 'local'),
 
     /*
     |--------------------------------------------------------------------------

@@ -1,0 +1,246 @@
+// Real browser + Laravel + SQLite smoke checks, using only throwaway data.
+// Requires installed dependencies, PHP, Node 24, and Chrome/Edge (or BROWSER_PATH).
+import assert from "node:assert/strict";
+import { spawn, spawnSync } from "node:child_process";
+import { mkdtempSync, writeFileSync, existsSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { resolve, join, dirname, basename } from "node:path";
+import { fileURLToPath } from "node:url";
+import { createServer } from "node:net";
+
+const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const backend = join(root, "backend");
+const temp = mkdtempSync(join(tmpdir(), "pwdwork-browser-"));
+const database = join(temp, "browser.sqlite");
+writeFileSync(database, "");
+const env = { ...process.env, PWDWORK_BROWSER_TEST: "1", APP_ENV: "browser_test",
+  APP_KEY: "base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=", APP_DEBUG: "false",
+  APP_URL: "http://localhost:8000", FRONTEND_URL: "http://localhost:5173",
+  CORS_ALLOWED_ORIGINS: "http://localhost:5173", SANCTUM_STATEFUL_DOMAINS: "localhost:5173,localhost:8000",
+  TRUSTED_PROXIES: "", DB_CONNECTION: "sqlite", DB_DATABASE: database, DB_URL: "",
+  SESSION_DRIVER: "database", SESSION_CONNECTION: "sqlite", SESSION_SECURE_COOKIE: "false",
+  SESSION_DOMAIN: "null", CACHE_STORE: "database", DB_CACHE_CONNECTION: "sqlite",
+  QUEUE_CONNECTION: "database", DB_QUEUE_CONNECTION: "sqlite", PASSWORD_RESET_QUEUE_CONNECTION: "database",
+  PASSWORD_RESET_QUEUE: "password-resets", MAIL_MAILER: "log", MAIL_LOG_CHANNEL: "stderr", LOG_CHANNEL: "stderr", BCRYPT_ROUNDS: "4",
+  APP_CONFIG_CACHE: join(temp, "config.php"), APP_ROUTES_CACHE: join(temp, "routes.php"),
+};
+const processes = [];
+let client;
+const logs = [];
+function launch(command, args, cwd = root, processEnv = env) {
+  const child = spawn(command, args, { cwd, env: processEnv, windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
+  child.stdout.on("data", (chunk) => logs.push(chunk.toString()));
+  child.stderr.on("data", (chunk) => logs.push(chunk.toString()));
+  processes.push(child);
+  return child;
+}
+const delay = (ms) => new Promise((done) => setTimeout(done, ms));
+async function waitFor(check, label, timeout = 20000) {
+  const start = Date.now();
+  while (Date.now() - start < timeout) {
+    try { if (await check()) return; } catch { /* Startup/navigation may be in progress. */ }
+    await delay(100);
+  }
+  throw new Error(`Timed out: ${label}`);
+}
+async function requireFreePort(port, host) {
+  await new Promise((done, reject) => {
+    const server = createServer();
+    server.once("error", reject);
+    server.listen(port, host, () => server.close(done));
+  });
+}
+class CDP {
+  constructor(socket) {
+    this.socket = socket; this.id = 0; this.pending = new Map(); this.exceptions = [];
+    socket.onmessage = ({ data }) => {
+      const message = JSON.parse(data);
+      if (message.id) {
+        const pending = this.pending.get(message.id);
+        if (!pending) return;
+        this.pending.delete(message.id);
+        if (message.error) pending.reject(new Error(message.error.message)); else pending.resolve(message.result);
+      }
+      if (message.method === "Runtime.exceptionThrown") this.exceptions.push(message.params.exceptionDetails.text);
+    };
+  }
+  send(method, params = {}) {
+    return new Promise((resolvePromise, reject) => {
+      const id = ++this.id;
+      this.pending.set(id, { resolve: resolvePromise, reject });
+      this.socket.send(JSON.stringify({ id, method, params }));
+      setTimeout(() => {
+        if (this.pending.delete(id)) reject(new Error(`CDP timeout: ${method}`));
+      }, 20000).unref();
+    });
+  }
+  async evaluate(expression) {
+    const result = await this.send("Runtime.evaluate", { expression, returnByValue: true, awaitPromise: true });
+    if (result.exceptionDetails) throw new Error(result.exceptionDetails.exception?.description || result.exceptionDetails.text);
+    return result.result.value;
+  }
+}
+const check = async (condition, label) => waitFor(() => client.evaluate(condition), label);
+async function go(path) {
+  await client.send("Page.navigate", { url: "http://localhost:5173" + path });
+  await check(`location.pathname === ${JSON.stringify(path.split("?")[0])} && document.querySelector('main') && !document.body.innerText.includes('Loading account...')`, "route " + path);
+}
+async function fill(selector, value) {
+  await client.evaluate(`(() => { const el = document.querySelector(${JSON.stringify(selector)}); if (!el) throw new Error('Missing input'); const proto = el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype; Object.getOwnPropertyDescriptor(proto, 'value').set.call(el, ${JSON.stringify(value)}); el.dispatchEvent(new Event('input', { bubbles: true })); })()`);
+}
+async function click(text, scope = "main") {
+  await client.evaluate(`(() => { const button = [...document.querySelectorAll(${JSON.stringify(scope + " button")})].find(el => el.textContent.trim() === ${JSON.stringify(text)} && !el.disabled); if (!button) throw new Error('Missing enabled button: ' + ${JSON.stringify(text)}); button.click(); })()`);
+}
+async function login(email, password = "password") {
+  await go("/login");
+  await check("!!document.querySelector('#login-email')", "login form");
+  await fill("#login-email", email);
+  await fill("#login-password", password);
+  await click("Continue");
+  await check("!location.pathname.includes('login')", "login success");
+}
+async function logout() {
+  await click("Log out", "header");
+  await check("(location.pathname === '/' || location.pathname === '/login') && ![...document.querySelectorAll('header button')].some(el => el.textContent.trim() === 'Log out')", "logout redirect");
+}
+function passed(name) { console.log("PASS " + name); }
+
+try {
+  await requireFreePort(8000, "127.0.0.1");
+  await requireFreePort(5173, "localhost");
+  await requireFreePort(9222, "127.0.0.1");
+  const fixture = spawnSync("php", ["tests/browser-fixture.php"], { cwd: backend, env, encoding: "utf8", windowsHide: true });
+  assert.equal(fixture.status, 0, fixture.stderr || fixture.stdout);
+  launch("php", ["-S", "127.0.0.1:8000", join(backend, "vendor/laravel/framework/src/Illuminate/Foundation/resources/server.php")], join(backend, "public"));
+  launch(process.execPath, [join(root, "node_modules/vite/bin/vite.js"), "--host", "localhost", "--port", "5173", "--strictPort"], root,
+    { ...process.env, VITE_API_URL: "/api" });
+  await waitFor(async () => (await fetch("http://localhost:5173/api/health")).ok, "Vite/API startup");
+  const browser = process.env.BROWSER_PATH || [
+    "C:/Program Files/Google/Chrome/Application/chrome.exe",
+    "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe",
+  ].find(existsSync);
+  assert.ok(browser, "Set BROWSER_PATH to Chrome or Edge.");
+  launch(browser, ["--headless=new", "--disable-gpu", "--no-first-run", "--no-default-browser-check",
+    "--remote-debugging-port=9222", "--remote-debugging-address=127.0.0.1", `--user-data-dir=${join(temp, "profile")}`, "about:blank"]);
+  let target;
+  await waitFor(async () => { target = (await (await fetch("http://127.0.0.1:9222/json/list")).json()).find((t) => t.type === "page"); return target; }, "browser startup");
+  const socket = new WebSocket(target.webSocketDebuggerUrl);
+  await new Promise((done, reject) => { socket.onopen = done; socket.onerror = reject; });
+  client = new CDP(socket);
+  await client.send("Page.enable");
+  await client.send("Runtime.enable");
+  await client.send("Network.enable");
+
+  await go("/jobs");
+  await check("document.body.innerText.includes('27 matching jobs')", "job results");
+  await click("Next page", 'nav[aria-label="Job search pages"]');
+  await check("document.body.innerText.includes('Page 2 of 3')", "second job page");
+  await client.evaluate("[...document.querySelectorAll('main label')].find(el => el.textContent.trim() === 'Contract').querySelector('input').click()");
+  await check("document.body.innerText.includes('11 matching jobs') && document.body.innerText.includes('Page 1 of 1')", "contract filter resets pagination");
+  passed("public search pagination and Contract filter");
+
+  await login("candidate@browser.example");
+  await go("/jobs/1");
+  await check("[...document.querySelectorAll('main button')].some(el => el.textContent.trim() === 'Unsave job')", "oldest saved-job state");
+  await go("/applicant/saved-jobs");
+  await check("document.body.innerText.includes('Page 1 of 3')", "saved jobs page");
+  await click("Next page", 'nav[aria-label="Saved job pages"]');
+  await check("document.body.innerText.includes('Page 2 of 3')", "saved jobs next page");
+  await client.send("Page.reload");
+  await check("document.body.innerText.includes('Saved jobs') && document.body.innerText.includes('Page 1 of 3')", "cookie refresh restoration");
+  await go("/applicant/applications");
+  await check("document.body.innerText.includes('Page 1 of 3')", "applications loaded");
+  await client.evaluate("document.querySelector('main article input[type=checkbox]').click()");
+  await check("document.querySelector('main article input[type=checkbox]')?.checked === true", "consent saved");
+  await click("Refresh applications");
+  await check("document.querySelector('main article input[type=checkbox]')?.checked === true", "consent persisted");
+  await logout();
+  passed("cookie login, refresh, saved/application pagination, sharing and logout");
+
+  await login("owner@browser.example");
+  await go("/employer/listings");
+  await check("document.body.innerText.includes('Page 1 of 3')", "employer listing pages");
+  await click("Next page", 'nav[aria-label="Employer listing pages"]');
+  await check("document.body.innerText.includes('Page 2 of 3')", "employer listing next");
+  await go("/employer/applicants");
+  await check("document.body.innerText.includes('41 results')", "employer applications loaded");
+  await fill('input[placeholder="Name, email, experience..."]', 'Browser Candidate');
+  await check("document.body.innerText.includes('Professional browser summary')", "real professional information");
+  await client.evaluate("(() => { const el = document.querySelector('select[aria-label=\"Status for Browser Candidate\"]'); el.value = 'Shortlisted'; el.dispatchEvent(new Event('change', {bubbles:true})); })()");
+  await check("document.querySelector('select[aria-label=\"Status for Browser Candidate\"]')?.value === 'Shortlisted'", "shortlisted status saved");
+  await click("Shortlisted");
+  await check("document.body.innerText.includes('1 results') && document.body.innerText.includes('Accessible restroom')", "status filter and consent disclosure");
+  await client.evaluate("(() => { const el = document.querySelector('select[aria-label=\"Status for Browser Candidate\"]'); el.value = 'Hired'; el.dispatchEvent(new Event('change', {bubbles:true})); })()");
+  await check("document.body.innerText.includes('No matching applicants')", "mutation removes item from current status filter");
+  await logout();
+  await login("candidate@browser.example");
+  await go("/applicant/applications");
+  await check("document.querySelector('main article')?.innerText.includes('Status: Hired')", "applicant sees Hired");
+  await logout();
+  passed("employer profile details, status mutation/filtering and applicant Hired display");
+
+  await go("/register");
+  await fill("#register-name", "Registered Browser Candidate");
+  await fill("#register-email", "registered@browser.example");
+  await fill("#register-password", "browser-password");
+  await click("Create account");
+  await check("location.pathname === '/jobs' && document.body.innerText.includes('Log out')", "browser registration");
+  const storage = await client.evaluate("Object.keys(localStorage)");
+  assert.ok(storage.every((key) => !/token|auth|profile|application/i.test(key)), "Sensitive data in localStorage");
+  await logout();
+  await go("/forgot-password");
+  await fill('main input[type="email"]', "registered@browser.example");
+  await click("Send reset link");
+  await check("document.body.innerText.includes('Request accepted.')", "queued recovery accepted");
+  const worker = spawnSync("php", ["artisan", "queue:work", "database", "--queue=password-resets", "--once", "--tries=1"],
+    { cwd: backend, env, windowsHide: true, encoding: "utf8" });
+  assert.equal(worker.status, 0, worker.stderr || worker.stdout);
+  const mail = worker.stderr + worker.stdout;
+  const token = mail.match(/token[=3D]+([a-f0-9]{64})/i)?.[1];
+  assert.ok(token, "Worker did not log a reset token");
+  await go(`/reset-password?token=${token}&email=registered%40browser.example`);
+  await fill('main input[type="password"]', 'changed-password');
+  await fill('main label:last-of-type input[type="password"]', 'changed-password');
+  await click("Reset password");
+  await check("document.body.innerText.includes('Password reset. Sign in')", "password reset complete");
+  await login("registered@browser.example", "changed-password");
+  await logout();
+  passed("browser registration, queued log-mail recovery, reset and new-password login");
+
+  await client.send("Emulation.setDeviceMetricsOverride", { width: 320, height: 800, deviceScaleFactor: 1, mobile: false });
+  await go("/jobs");
+  await check("document.body.innerText.includes('27 matching jobs')", "mobile jobs loaded");
+  assert.ok(await client.evaluate("document.documentElement.scrollWidth <= 320"), "Horizontal overflow at 320px");
+  await client.send("Network.emulateNetworkConditions", { offline: true, latency: 0, downloadThroughput: 0, uploadThroughput: 0 });
+  await click("Reset all filters and search");
+  // Changing a filter forces an actual API request while offline.
+  await client.evaluate("[...document.querySelectorAll('main label')].find(el => el.textContent.trim() === 'Contract').querySelector('input').click()");
+  await check("document.body.innerText.includes('Cannot reach the server')", "offline error");
+  await client.send("Network.emulateNetworkConditions", { offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1 });
+  await click("Try again");
+  await check("document.body.innerText.includes('11 matching jobs')", "offline retry");
+  assert.deepEqual(client.exceptions, [], "Uncaught browser exceptions");
+  passed("320px reflow, offline errors/retry and no uncaught browser exceptions");
+  console.log("Browser smoke checks passed. Only isolated temporary SQLite fixtures were used.");
+} catch (error) {
+  if (client) {
+    try { console.error((await client.evaluate("document.body.innerText")).slice(0, 2500)); } catch { /* Browser may have exited. */ }
+  }
+  console.error(error);
+  console.error(logs.join("").slice(-2000));
+  process.exitCode = 1;
+} finally {
+  if (client) {
+    try { await client.send("Browser.close"); } catch { /* Browser may already be closed. */ }
+    client.socket.close();
+  }
+  for (const child of processes.reverse()) {
+    if (child.exitCode === null) child.kill();
+  }
+  await delay(500);
+  // Validate the absolute cleanup target before removing this run's own fixtures.
+  if (resolve(dirname(temp)) === resolve(tmpdir()) && basename(temp).startsWith("pwdwork-browser-")) {
+    try { rmSync(temp, { recursive: true, force: true, maxRetries: 3, retryDelay: 200 }); }
+    catch { console.error("Temporary browser files remain at " + temp); }
+  }
+}

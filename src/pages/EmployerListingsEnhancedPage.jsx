@@ -1,11 +1,12 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
 import { useUi } from "../context/UiContext.jsx";
 import { apiErrorMessage } from "../services/api.js";
-import { useResource } from "../hooks/useResource.js";
+import { usePaginatedResource } from "../hooks/usePaginatedResource.js";
+import Pagination from "../components/Pagination.jsx";
 import RequestState from "../components/RequestState.jsx";
-import { accommodationOptions } from "../services/filters.js";
+import { accommodationOptions, employmentTypes } from "../services/filters.js";
 import {
   createEmployerJob,
   fetchEmployerJobs,
@@ -28,20 +29,17 @@ const emptyListing = {
 export default function EmployerListingsEnhancedPage() {
   const { user } = useAuth();
   const { showToast } = useUi();
-  const resource = useResource(fetchEmployerJobs, user.id);
-  const listings = resource.data || EMPTY;
-  const setListings = resource.setData;
+  const [filter, setFilter] = useState("All");
+  const resource = usePaginatedResource(fetchEmployerJobs,
+    filter === "All" ? {} : { status: filter.toLowerCase() }, user.id);
+  const listings = resource.data?.jobs || EMPTY;
   const [error, setError] = useState("");
   const [draft, setDraft] = useState(emptyListing);
   const [editingId, setEditingId] = useState(null);
-  const [filter, setFilter] = useState("All");
   const [showForm, setShowForm] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  const visible = useMemo(
-    () => listings.filter((item) => filter === "All" || item.status === filter),
-    [listings, filter],
-  );
+  const visible = listings;
   const updateDraft = (field, value) =>
     setDraft((current) => ({ ...current, [field]: value }));
   const resetForm = () => {
@@ -61,14 +59,10 @@ export default function EmployerListingsEnhancedPage() {
     setSaving(true);
     setError("");
     try {
-      const saved = editingId
-        ? await updateEmployerJob(editingId, draft)
-        : await createEmployerJob(draft);
-      setListings((current) =>
-        editingId
-          ? current.map((item) => (item.id === editingId ? saved : item))
-          : [saved, ...(current || [])],
-      );
+      await (editingId
+        ? updateEmployerJob(editingId, draft)
+        : createEmployerJob(draft));
+      resource.reload();
       showToast(
         editingId ? "Listing updated" : "Listing created",
         "The change is now visible to jobseekers.",
@@ -86,10 +80,8 @@ export default function EmployerListingsEnhancedPage() {
     setSaving(true);
     const status = listing.status === "Open" ? "Closed" : "Open";
     try {
-      const updated = await updateEmployerJobStatus(listing.id, status);
-      setListings((current) =>
-        current.map((item) => (item.id === listing.id ? updated : item)),
-      );
+      await updateEmployerJobStatus(listing.id, status);
+      resource.reload();
     } catch (e) {
       setError(apiErrorMessage(e));
     } finally {
@@ -165,9 +157,7 @@ export default function EmployerListingsEnhancedPage() {
                   onChange={(event) => updateDraft("type", event.target.value)}
                   className="form-input"
                 >
-                  <option>Full Time</option>
-                  <option>Part Time</option>
-                  <option>Contract</option>
+                  {employmentTypes.map((type) => <option key={type}>{type}</option>)}
                 </select>
               </label>
               <label>
@@ -266,6 +256,7 @@ export default function EmployerListingsEnhancedPage() {
               key={item}
               type="button"
               aria-pressed={filter === item}
+              disabled={saving}
               onClick={() => setFilter(item)}
               className={`px-4 py-2 rounded-full text-sm font-extrabold border ${filter === item ? "bg-brand-teal text-white border-brand-teal" : "bg-white text-brand-dark border-gray-200"}`}
             >
@@ -320,6 +311,7 @@ export default function EmployerListingsEnhancedPage() {
             </article>
           ))}
         </div>
+        <Pagination resource={resource} label="Employer listing pages" disabled={saving} />
       </div>
     </main>
   );

@@ -16,7 +16,9 @@ class PasswordController extends Controller
     {
         $data = $request->validate(['email' => ['required', 'email', 'max:255']]);
         try {
-            SendPasswordResetLink::dispatch($data['email'])->onConnection('database')->onQueue('password-resets');
+            SendPasswordResetLink::dispatch($data['email'])
+                ->onConnection(config('queue.password_reset_connection'))
+                ->onQueue(config('queue.password_reset_queue'));
         } catch (\Throwable $exception) {
             report($exception);
 
@@ -34,7 +36,7 @@ class PasswordController extends Controller
                 $user->forceFill(['password' => Hash::make($password), 'remember_token' => Str::random(60)])->save();
                 $user->tokens()->delete();
                 if (config('session.driver') === 'database') {
-                    DB::table(config('session.table', 'sessions'))->where('user_id', $user->id)->delete();
+                    DB::connection(config('session.connection'))->table(config('session.table', 'sessions'))->where('user_id', $user->id)->delete();
                 }
             });
             event(new PasswordReset($user));

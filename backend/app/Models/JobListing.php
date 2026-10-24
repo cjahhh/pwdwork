@@ -9,6 +9,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class JobListing extends Model
 {
+    public const EMPLOYMENT_TYPES = ['Full Time', 'Part Time', 'Contract'];
+
     protected $fillable = [
         'employer_id',
         'title',

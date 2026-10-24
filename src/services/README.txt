@@ -1,4 +1,1 @@
-All data access belongs here (jobService, authService, applicationService, and so on).
-Phase 1 only has api.js (Axios, unused until Laravel exists).
-Phase 2 will add mock service functions that return Promises.
-Components import services only — never mock data files.
+Services call the Laravel API through api.js. Collection services return their named array plus pagination meta. Auth uses HttpOnly sessions and CSRF, never browser credential storage. See PHASE1-SETUP.md for contracts.

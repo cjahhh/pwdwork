@@ -12,5 +12,8 @@ export const workOptions = [
   "Hybrid",
   "Full-time",
   "Part-time",
+  "Contract",
   "Flexible schedule",
 ];
+
+export const employmentTypes = ["Full Time", "Part Time", "Contract"];

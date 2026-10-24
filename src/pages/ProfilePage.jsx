@@ -56,7 +56,8 @@ function Editor({ initial, employer }) {
         ["name", "Full name"],
         ["headline", "Professional headline"],
         ["location", "Location"],
-        ["bio", "Short bio"],
+        ["bio", "Professional summary"],
+        ["experience", "Relevant work or volunteer experience"],
       ];
   return (
     <form onSubmit={save} className="panel space-y-5" aria-busy={busy}>
@@ -73,7 +74,7 @@ function Editor({ initial, employer }) {
       {fields.map(([field, label]) => (
         <label className="block" key={field}>
           <span className="form-label">{label}</span>
-          {["bio", "description"].includes(field) ? (
+          {["bio", "description", "experience"].includes(field) ? (
             <textarea
               className="form-input"
               maxLength={10000}
@@ -104,6 +105,7 @@ function Editor({ initial, employer }) {
           </label>
           <fieldset>
             <legend>Requested accommodations</legend>
+            <p>These stay private unless you choose to share them for an application. Professional summaries and experience are visible to employers you apply to; do not include medical diagnoses.</p>
             {[
               ...new Set([...accommodationOptions, ...profile.accommodations]),
             ].map((label) => (

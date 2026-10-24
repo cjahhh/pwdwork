@@ -61,7 +61,7 @@ export function dedupeApplicants(applicants) {
 
 export async function fetchJobs(params = {}) {
   const { data } = await api.get("/jobs", { params });
-  return data.jobs;
+  return data;
 }
 
 export async function fetchJob(id) {
@@ -84,9 +84,9 @@ export function mapJobToApiPayload(listing) {
   };
 }
 
-export async function fetchEmployerJobs() {
-  const { data } = await api.get("/employer/jobs");
-  return data.jobs;
+export async function fetchEmployerJobs(params = {}) {
+  const { data } = await api.get("/employer/jobs", { params });
+  return data;
 }
 
 export async function createEmployerJob(listing) {
@@ -112,16 +112,17 @@ export async function updateEmployerJob(id, listing) {
   return data.job;
 }
 
-export async function applyToJob(id, coverLetter = "") {
+export async function applyToJob(id, coverLetter = "", shareAccommodations = false) {
   const { data } = await api.post(`/jobs/${id}/applications`, {
     cover_letter: coverLetter,
+    share_accommodations: shareAccommodations,
   });
   return data.application;
 }
 
-export async function fetchEmployerApplications() {
-  const { data } = await api.get("/employer/applications");
-  return data.applicants;
+export async function fetchEmployerApplications(params = {}) {
+  const { data } = await api.get("/employer/applications", { params });
+  return data;
 }
 
 export async function updateEmployerApplication(id, status, schedule = {}) {
@@ -129,7 +130,8 @@ export async function updateEmployerApplication(id, status, schedule = {}) {
     New: "submitted",
     Reviewing: "reviewing",
     Interview: "interview",
-    Shortlisted: "hired",
+    Shortlisted: "shortlisted",
+    Hired: "hired",
     Rejected: "rejected",
   };
   const { data } = await api.patch(`/employer/applications/${id}`, {
@@ -147,7 +149,27 @@ export async function scheduleInterview(id, schedule) {
   });
 }
 
-export async function fetchApplicantApplications() {
-  const { data } = await api.get("/applicant/applications");
-  return data.applications;
+export async function fetchApplicantApplications(params = {}) {
+  const { data } = await api.get("/applicant/applications", { params });
+  return data;
+}
+
+export async function updateApplicationSharing(id, share) {
+  return (await api.patch(`/applicant/applications/${id}`, {
+    share_accommodations: share,
+  })).data;
+}
+
+export async function downloadApplicantResume(id) {
+  const { data, headers } = await api.get(`/employer/applications/${id}/resume`, {
+    responseType: "blob",
+  });
+  const url = URL.createObjectURL(data);
+  const link = document.createElement("a");
+  link.href = url;
+  const extension = headers["content-disposition"]?.match(/filename="?resume\.(pdf|docx?)\b/i)?.[1]
+    || (data.type.includes("pdf") ? "pdf" : data.type.includes("wordprocessingml") ? "docx" : "doc");
+  link.download = `resume.${extension}`;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }

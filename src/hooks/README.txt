@@ -1,1 +1,1 @@
-Shared React hooks will live here (for example useLocalStorage in later phases).
+useResource handles loading/error/retry and ignores obsolete responses. usePaginatedResource resets pages on filters/account changes and reconciles pages after removals. useAutoRefresh is a compatibility wrapper, not a polling loop.

@@ -52,7 +52,7 @@ class AuthController extends Controller
 
             return $user;
         });
-        Auth::login($user);
+        Auth::guard('web')->login($user);
         $request->session()->regenerate();
 
         return response()->json([
@@ -83,7 +83,7 @@ class AuthController extends Controller
             ], 403);
         }
 
-        Auth::login($user);
+        Auth::guard('web')->login($user);
         $request->session()->regenerate();
 
         return response()->json([

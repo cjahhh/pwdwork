@@ -1,1 +1,1 @@
-Phase 3 will add AuthContext.jsx here (logged-in user, role, login, logout).
+AuthContext restores server sessions and exposes login/register/logout. UiContext stores accessibility preferences only. Professional profiles and applications live in Laravel/MySQL.

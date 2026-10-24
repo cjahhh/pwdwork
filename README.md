@@ -1,78 +1,87 @@
 # PWDWork
 
-An inclusive job matching web platform for persons with disabilities (PWDs) in the Philippines.
+An inclusive job platform for persons with disabilities in the Philippines. React/Vite provides the browser application; Laravel 12, Sanctum session authentication, and MySQL/MariaDB provide the API and persistent data.
 
-CIT 301 prototype at the Technological Institute of the Philippines. Supports SDG 8 and SDG 10; aligns with RA 7277 and RA 10524.
+Phase 1.5 fixes the Phase 1 audit findings. Phase 2 has not been implemented. See [PHASE1-SETUP.md](PHASE1-SETUP.md) for API, privacy, and deployment details and [PWDWORK_IMPLEMENTATION_REPORT.md](PWDWORK_IMPLEMENTATION_REPORT.md) for verification results and limitations.
 
-**Current phase:** audit and setup. The React app still shows placeholder pages. Laravel + Sanctum are installed in `/backend` and pointed at local MySQL. Tables, seeders, and login come in the next phases.
+## Requirements
 
-## Tech stack
+- PHP 8.2+ and Composer 2, with Laravel's required extensions plus PDO MySQL; tests also need PDO SQLite.
+- Node.js supported by the locked Vite version (Node 24 was used for verification), and npm.
+- MySQL or MariaDB for application data. XAMPP is one local option; deployment is not tied to XAMPP or Windows.
+- A background worker and SMTP provider for delivered password-reset emails.
 
-- Front end: React (Vite), React Router, CSS Modules, Axios
-- Back end: Laravel 12, Sanctum (API tokens), MySQL (XAMPP MariaDB)
-- Cloud deployment is out of scope for now
+## Install
 
-Laravel 13 needs PHP 8.3. This machine has PHP 8.2.12, so the project uses **Laravel 12** (latest line that matches XAMPP).
-
-## Local environment (this project)
-
-- Windows + XAMPP (`C:\xampp`)
-- PHP 8.2.12
-- Composer 2.9.7
-- MySQL user `root` with an empty password
-- Database name: `pwdwork`
-
-## Run locally
-
-1. In the **XAMPP Control Panel**, start **Apache** (optional) and **MySQL**.
-2. API (Terminal 1):
+Run commands from the repository root unless indicated. Use existing env files when present; copy the examples only for a new installation. Keep credentials out of Git.
 
 ```powershell
-cd C:\Users\A-204\pwdwork\backend
-php artisan serve
-```
-
-3. Front end (Terminal 2):
-
-```powershell
-cd C:\Users\A-204\pwdwork
-npm install
-npm run dev
-```
-
-4. Open [http://localhost:5173](http://localhost:5173) for the UI and [http://localhost:8000/api/health](http://localhost:8000/api/health) for the API ping.
-
-Copy env files if you clone on another PC:
-
-```powershell
-copy .env.example .env
-copy backend\.env.example backend\.env
-cd backend
+npm ci
+Copy-Item .env.example .env
+Set-Location backend
+composer install --prefer-dist --no-interaction
+Copy-Item .env.example .env
 php artisan key:generate
 ```
 
-Do **not** run `php artisan migrate` yet. Custom tables are the next phase.
+Generate APP_KEY only for a new installation. Existing installations must retain their key. Configure backend/.env with the database host, database name, and credentials; use your database administrator/provider to create an **empty database** first. Local MySQL must be running. Then, from backend:
 
-`php artisan db:show` may error on XAMPP (`performance_schema.session_status`). That is a MariaDB quirk, not a bad `.env`. A real query to `pwdwork` succeeds.
+```powershell
+php artisan migrate:status
+php artisan migrate
+```
 
-## Folder map (for the defense)
+Laravel migrations are the authoritative schema. Existing installations should back up first, inspect pending migrations, and apply them using the same additive command. The Phase 1.5 migration adds nullable experience and an accommodation-sharing flag defaulting to false; it never rewrites application statuses. The historical database/sql/pwdwork.sql import is retired and contains comments only.
 
-| Path | What it is for |
-| --- | --- |
-| `src/pages/` | One file per screen (still placeholders). |
-| `src/components/` | Shared UI: Layout, Navbar, Footer, ProtectedRoute. |
-| `src/services/api.js` | Shared Axios instance (`VITE_API_URL`). |
-| `src/context/` | AuthContext will go here later. |
-| `backend/` | Laravel REST API. |
-| `backend/.env` | Local secrets (never commit). |
-| `backend/config/cors.php` | Allows the Vite origin `http://localhost:5173`. |
-| `backend/app/Models/User.php` | User model with Sanctum `HasApiTokens`. |
-| `backend/routes/api.php` | API routes (`/api/health`, `/api/user`). |
+Optional demo data: run `php artisan db:seed` only in an explicitly disposable local demo database. The seeder preserves passwords but can update matching demo profiles/jobs/statuses, so it is unsuitable for real data. Demo emails and the password `password` are development fixtures. No production administrator is automatically provisioned.
 
-## Front-end routes (unchanged)
+## Run locally
 
-`/`, `/jobs`, `/jobs/:id`, `/employers`, `/about`, `/login`, `/register`, `/forgot-password`, `/applicant`, `/employer`, `/admin`
+Use localhost consistently in the browser, APP_URL, FRONTEND_URL, CORS_ALLOWED_ORIGINS, and SANCTUM_STATEFUL_DOMAINS.
 
-## Next phases
+```powershell
+# Terminal 1, from backend
+php artisan serve --host=127.0.0.1 --port=8000
+```
 
-Database (migrations, models, seeders) → Authentication → public pages with real jobs → applicant → employer → admin → testing.
+```powershell
+# Terminal 2, from the repository root
+npm run dev
+```
+
+```powershell
+# Terminal 3, from backend
+php artisan queue:work database --queue=password-resets,default --tries=3 --timeout=60
+```
+
+Open http://localhost:5173. Vite forwards /api to Laravel. http://localhost:8000/api/health reports API liveness. The worker command matches the example queue settings; adjust connection and queue together if configured differently.
+
+`MAIL_MAILER=log` is local-only: reset links go to the configured logs, not an inbox. Configure SMTP and verify real inbox delivery before release. The reset endpoint returns 202 when queued, and 503 when enqueueing fails.
+
+## Verification
+
+```powershell
+# Repository root
+npm run build
+npm run lint
+
+# backend
+php artisan test
+composer validate --no-check-publish
+```
+
+Optional integrated browser checks from the root: `node scripts/browser-smoke.mjs`. This requires Chrome/Edge (or BROWSER_PATH) and free ports 5173, 8000, and 9222. It starts hidden headless browser/local servers, initializes a new temporary SQLite database with fake records, tests React against Laravel, and removes only that run's temporary files. It never uses the configured MySQL database. Real SMTP delivery is not part of this check.
+
+Committed backend/.env.testing and forced phpunit.xml settings use SQLite :memory:, array sessions/cache/mail, and a public test-only key. Tests refuse to start against any other default database. No existing MySQL records are used. A cached production configuration causes the safety guard to fail; run checks in a separate development/test checkout rather than clearing a live application's cache. The test suite internally builds only disposable in-memory schemas.
+
+## Cloud deployment
+
+The app supports a portable PHP runtime plus managed MySQL/MariaDB and static frontend hosting. Hosting must support an asynchronous queue worker. See [PHASE1-SETUP.md](PHASE1-SETUP.md#cloud-deployment-requirements) before choosing configuration. Nothing is deployed by this repository's setup commands.
+
+Production needs HTTPS, APP_ENV=production, APP_DEBUG=false, secure session cookies, a consistent secret APP_KEY, exact trusted frontend domains, shared cache/database sessions, private durable resume storage when used, logs, backups, and supervised workers. Serve Laravel from backend/public and the frontend from dist; configure SPA fallback and API routing. Vite's development proxy does not become a production proxy.
+
+## Scope
+
+Implemented: registration/login/logout, password recovery, persisted professional profiles, job search and combined filters, employer listings, saved jobs, applications, distinct shortlisting/hiring, interviews, applicant-controlled accommodation sharing, and pagination.
+
+Deferred to later phases: admin verification/user/report workflows, resume uploads, notification management/delivery, and any new matching features. Existing resume references can be downloaded through the authorized employer endpoint when their private files exist. Manual accessibility and production service checks remain release requirements.

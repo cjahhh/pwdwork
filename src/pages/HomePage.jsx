@@ -10,8 +10,8 @@ function HomePage() {
   const [query, setQuery] = useState("");
   const [location, setLocation] = useState("");
 
-  const resource = useResource(fetchJobs);
-  const featuredJobs = (resource.data || []).slice(0, 3);
+  const resource = useResource(() => fetchJobs({ per_page: 3 }));
+  const featuredJobs = resource.data?.jobs || [];
 
   function clearFilters() {
     setQuery("");
@@ -126,7 +126,7 @@ function HomePage() {
           <RequestState resource={resource} />
           {!resource.loading && !resource.error && <JobGrid
             jobs={featuredJobs}
-            totalCount={resource.data?.length || 0}
+            totalCount={resource.data?.meta.total || 0}
             emptyAction={
               <button
                 type="button"

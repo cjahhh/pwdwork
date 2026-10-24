@@ -1,7 +1,8 @@
 import { useSearchParams } from "react-router-dom";
 import { fetchJobs } from "../services/jobs.js";
 import { accommodationOptions, workOptions } from "../services/filters.js";
-import { useResource } from "../hooks/useResource.js";
+import { usePaginatedResource } from "../hooks/usePaginatedResource.js";
+import Pagination from "../components/Pagination.jsx";
 import RequestState from "../components/RequestState.jsx";
 import JobGrid from "../components/JobGrid.jsx";
 export default function FindJobsPage() {
@@ -9,21 +10,19 @@ export default function FindJobsPage() {
   const selected = params.getAll("work"),
     accommodations = params.getAll("accommodation");
   const key = params.toString();
-  const resource = useResource(
-    () =>
-      fetchJobs({
+  const resource = usePaginatedResource(
+    fetchJobs, {
         query: params.get("q") || "",
         location: params.get("location") || "",
         modes: selected.filter((v) =>
           ["Remote", "Onsite", "Hybrid"].includes(v),
         ),
         types: selected
-          .filter((v) => ["Full-time", "Part-time"].includes(v))
-          .map((v) => (v === "Full-time" ? "Full Time" : "Part Time")),
+          .filter((v) => ["Full-time", "Part-time", "Contract"].includes(v))
+          .map((v) => ({ "Full-time": "Full Time", "Part-time": "Part Time", Contract: "Contract" })[v]),
         flexible: selected.includes("Flexible schedule") ? 1 : 0,
         accommodations,
-      }),
-    key,
+      }, key,
   );
   function toggle(name, value) {
     const next = new URLSearchParams(params);
@@ -129,10 +128,11 @@ export default function FindJobsPage() {
       <RequestState resource={resource} />
       {resource.data && (
         <>
-          <p role="status">{resource.data.length} matching jobs</p>
-          <JobGrid jobs={resource.data} totalCount={resource.data.length} />
+          <p>{resource.data.meta.total} matching jobs</p>
+          <JobGrid jobs={resource.data.jobs} totalCount={resource.data.meta.total} />
         </>
       )}
+      <Pagination resource={resource} label="Job search pages" />
     </main>
   );
 }

@@ -1,53 +1,90 @@
-# Phase 1 setup and verification
+# Phase 1.5 setup and integration
 
-Persistent data lives in Laravel/MySQL. No application data is read from browser storage. Legacy browser records are deliberately left untouched; they are not automatically uploaded because their provenance and IDs cannot be trusted. Export and review them manually before any migration. Historical examples in src/data/jobs.js are inactive; the development examples remain in PwdWorkSeeder.
+Installation and local commands are in [README.md](README.md). This document defines the behavior added to the existing Phase 1 implementation. MySQL-backed Laravel models are the source of truth. Browser storage holds accessibility preferences only; historical browser records are not automatically imported.
 
-## Environment
+## Data preservation and schema
 
-Set backend/.env locally; never commit credentials:
+Use `php artisan migrate` from backend after reviewing pending migrations and taking an appropriate backup. The new 2026_10_24_000001 migration adds:
 
-```dotenv
-APP_ENV=local
-APP_URL=http://localhost:8000
-FRONTEND_URL=http://localhost:5173
-DB_CONNECTION=mysql
-DB_HOST=127.0.0.1
-DB_PORT=3306
-DB_DATABASE=pwdwork
-DB_USERNAME=your_local_user
-DB_PASSWORD=your_local_password
-SESSION_DRIVER=database
-SESSION_LIFETIME=120
-SESSION_HTTP_ONLY=true
-SESSION_SAME_SITE=lax
-SESSION_SECURE_COOKIE=false
-SANCTUM_STATEFUL_DOMAINS=localhost:5173,localhost:8000
-MAIL_MAILER=smtp
-MAIL_HOST=your_smtp_host
-MAIL_PORT=587
-MAIL_USERNAME=your_smtp_username
-MAIL_PASSWORD=your_smtp_password
-MAIL_SCHEME=smtp
-MAIL_FROM_ADDRESS=no-reply@your-domain.example
-MAIL_FROM_NAME=PWDWork
+- applicant_profiles.experience: nullable professional experience text.
+- applications.share_accommodations: boolean, default false for both existing and new applications.
+
+Application status already uses a string column. No status conversion is necessary. Existing hired records are retained; historical hired values may include old shortlisting decisions, and the database cannot distinguish those from legitimate hires. Review ambiguous records with the employer before an explicit correction. Reading an application never changes its status.
+
+The retired database/sql/pwdwork.sql contains no executable statements. Historical imports/reset commands are not an upgrade path. No migration rollback, table reset, or seeding against existing real data is part of Phase 1.5 setup. Existing schema imports from earlier versions still need pending migrations.
+
+## Application statuses
+
+Stored codes: submitted, reviewing, shortlisted, interview, hired, rejected. Employers see submitted as New; applicants see Submitted. Reviewing, Shortlisted, Interview, Hired, and Rejected mean the same to both roles. Shortlisted does not indicate a hiring decision. API responses include a display status and canonical statusCode. Unknown historical values remain readable with their original code and a human-readable label; writes accept only supported codes. Interview scheduling still requires a future/current date and a time in Asia/Manila; changing away from interview clears its schedule as before.
+
+## Professional profiles and privacy
+
+Employers receive professional details only for applications to their own listings: name, email, headline, skills, experience, professional summary, cover letter, and resume availability. Empty fields are shown as Not provided. Experience is a new editable profile field; legacy summaries are not automatically reclassified as work history.
+
+Each application has independent accommodation-sharing consent. The apply screen defaults to unchecked, and Your applications allows enabling or revoking sharing. Repeated apply requests preserve the original cover letter, status, and sharing choice. Only standardized accommodation labels are shared when consent is true; arbitrary historical labels are excluded. Employers cannot modify consent. Private PWD identifiers, phone numbers, raw storage paths, and unrelated profile fields are excluded from employer responses, including status-update responses. Applicants should keep medical diagnoses out of professional free-text fields and resumes; software cannot infer or redact diagnoses inside user-authored documents.
+
+Resume uploads remain deferred. Existing safe, relative PDF/DOC/DOCX references use RESUME_DISK (local private disk by default). GET /api/employer/applications/{id}/resume checks employer ownership, rejects absolute/URL/traversal paths, and streams a private download with no-store caching. Missing files return 404. The API does not expose a storage path or a public link. On cloud hosts, use private durable storage, install its compatible Flysystem adapter if required, and configure credentials through the host. The repository does not currently include the S3 adapter; choosing an S3 disk requires installing it first.
+
+## Collection API and pagination
+
+GET /api/jobs, /api/employer/jobs, /api/employer/applications, /api/applicant/applications, and /api/applicant/saved-jobs now paginate on the server. Defaults: 12 records; per_page accepts 1-50; page accepts positive integers up to 1,000,000. Invalid values return 422. Ordering uses creation time and ID (saved jobs use saved pivot ID) to prevent duplicate/omitted records on tied timestamps for a stable dataset. Concurrent additions can shift offset pages.
+
+Existing named arrays remain: jobs, applicants, or applications. Each response now includes:
+
+```json
+{"jobs": [], "meta": {"current_page": 1, "last_page": 1, "per_page": 12, "total": 0, "from": null, "to": null}}
 ```
 
-Use one hostname consistently. If using 127.0.0.1, change APP_URL, FRONTEND_URL and SANCTUM_STATEFUL_DOMAINS together. FRONTEND_URL is a single trusted URL used in reset emails. Use HTTPS, SESSION_SECURE_COOKIE=true and your real same-site frontend/API hosts in production. Configure SESSION_DOMAIN only if needed for sibling subdomains. The first-party browser app uses Laravel session cookies with CSRF protection; external API tokens remain supported by Sanctum. The default frontend API URL is /api; Vite proxies it to Laravel. For a separate API host, set VITE_API_URL=https://api.example.com/api and configure CORS plus Sanctum domains. Never use a third-party cross-site API host for this session setup.
+This changes collection services from returning bare arrays to returning the complete response envelope. All existing consumers in src were updated together. External clients must consume meta and request later pages; the first response no longer contains every record.
 
-MAIL_MAILER=log is available for local development; it logs links and does not deliver email. SMTP credentials come from your mail provider. Laravel SMTP supports STARTTLS with smtp and provider-specific implicit TLS using smtps. Verify a real inbox delivery before deploying. Reset email responses report accepted requests without promising delivery; delivery exceptions are logged and retried by the worker. Run php artisan queue:work database --queue=password-resets --tries=3 to deliver reset emails. Every request queues the same job before any account lookup, limiting account enumeration through response timing. A 202 response means queued, not delivered; queue failures return a generic 503. Mail exceptions retry and enter Laravel failed jobs. Monitor failed jobs and retry after correcting SMTP configuration. Password broker tokens expire after 60 minutes, are hashed in MySQL, and are single use. Requests are limited to 5/minute/IP plus the broker's 60-second per-account throttle. Password reset revokes personal tokens and database sessions. Keep SESSION_DRIVER=database for revocation across all browser sessions.
+- Public jobs: query, location, modes[], types[], flexible, accommodations[]. Employment types are Full Time, Part Time, Contract. Any selected type/mode may match; all selected accommodations must match.
+- Employer jobs: query (title), status=open|closed.
+- Employer applications: query (applicant name/email, job title, professional experience/summary), status (canonical code), job_id. Ownership applies to the complete query before filtering.
+- Applicant applications: status (canonical code), always account scoped.
+- GET /api/applicant/saved-jobs/{jobId} returns {"saved": true|false}, so job-detail state never depends on which saved-jobs page is loaded.
+- PATCH /api/applicant/applications/{id} accepts share_accommodations only, for the owning applicant.
 
-## Apply
+React uses labelled Previous/Next controls, live page summaries, loading/errors/retry, empty results, page reset on filter changes, and recovery when a mutation empties the last page. The employer's job filter has its own paginated searchable choices and uses IDs to distinguish duplicate titles. CSV export explicitly fetches all matching application pages in batches of 50; it retains the existing columns and formula-injection protection. It is an explicit export, not a listing API bypass; very large exports can consume browser memory and need a future background export workflow. CSV and pagination are not a transactionally frozen snapshot.
 
-From backend, run php artisan config:clear, then php artisan migrate. Start the password-reset worker with php artisan queue:work database --queue=password-resets --tries=3. To populate an explicitly local demo database, run php artisan db:seed. Do not run the demo seeder on production data. Existing data is preserved by the migration. The seeder no longer deletes older job examples or overwrites account passwords. Demo credentials are public development data only. Existing accommodation labels are preserved; the new filters use exact standardized labels. Employers must review old entries and select the new labels themselves; no unverified claims are inferred for existing real jobs. All displayed accommodation claims are labeled employer-reported.
+## Registration and public endpoint throttles
 
-Run npm run build and npm run lint in the root. Run php artisan test in backend. Tests use an isolated in-memory SQLite database, never the configured MySQL database.
+Registration: 5 requests/minute/client IP, including validation failures, through Laravel's named registration limiter. Successful registration returns 201 and signs in via the web guard; validation returns 422; throttling returns 429 with Retry-After. Applicant and employer roles are supported; self-registration as admin is rejected. Existing limits remain: login 10/minute, forgot-password 5/minute, reset-password 10/minute.
 
-## Accessibility review
+Use shared CACHE_STORE=database (example default) or an appropriately configured Redis store across web instances. A file cache gives separate limits on each instance. TRUSTED_PROXIES is a comma-separated allowlist of proxy IPs/CIDRs. Empty trusts no proxy. Forwarded client-IP/HTTPS headers are honored only from these proxies; forwarded host is not trusted. Configure the provider's actual ingress addresses and prevent direct access that bypasses the ingress. An incorrect proxy list can collapse clients onto one IP or permit spoofed IPs. Tests cover separate clients behind a trusted proxy and forged headers from an untrusted address.
 
-Target: WCAG 2.2 AA; no independent conformance claim. Native controls, keyboard focus, skip link, route focus, native modal focus management, persistent settings, reduced-motion preference, dark/high-contrast presentation, and optional browser read-aloud are implemented. The reading-font option uses Arial/Verdana with additional spacing; it does not load a specialized clinical font or guarantee reading outcomes. Read aloud is user initiated, can be stopped, and stops on navigation; external screen readers work without enabling a toggle.
+## Authentication and recovery
 
-Manual release checks: keyboard-only navigation and dialogs; NVDA/VoiceOver labels, errors and status announcements; 200% browser zoom and 320 CSS-pixel reflow; dark/high-contrast controls; reduced motion; mobile filters; login then refresh; logout/login persistence; offline operations and retry; expired sessions; password email delivery and expired/reused reset links. Automated checks do not establish full WCAG conformance.
+First-party React authentication uses HttpOnly Laravel database session cookies with CSRF protection. Login/register fetch /api/csrf-cookie before writing. Tokens remain available through Sanctum for externally provisioned API clients; no public token-issuing flow was added.
 
-## Completed verification (2026-10-22)
+FRONTEND_URL is a single trusted frontend URL for reset email links. CORS_ALLOWED_ORIGINS is a separate comma-separated list of exact browser origins. SANCTUM_STATEFUL_DOMAINS contains trusted frontend/API hosts with ports and no schemes. Use one hostname consistently locally. For sibling subdomains, configure SESSION_DOMAIN=.example.com so Axios can read the XSRF cookie and send its header; use same-site frontend/API domains. This architecture does not support arbitrary cross-site hosting domains without further authentication changes.
 
-18 PHPUnit tests / 71 assertions passed, including persistence and account isolation, authorization and expired tokens, CSRF enforcement, combined search filters, interview synchronization, queued reset delivery, recovery rate limits, password confirmation, expiry and reuse, and preservation of demo data. The additive migrations were applied to local MySQL. The production Vite build and Oxlint passed. Headless Edge checks passed for actual cookie login, refresh restoration, logout/protected redirects, absence of sensitive localStorage writes, 320px filter layout without horizontal overflow, combined filters, persistent contrast settings, skip navigation, offline errors without sample data, and missing reset tokens. Real SMTP inbox delivery and manual assistive-technology conformance checks remain environment/release checks. The current local MAIL_MAILER=log does not deliver email.
+Every accepted recovery request queues the same job before account lookup and returns a generic 202. PASSWORD_RESET_QUEUE_CONNECTION (default database) and PASSWORD_RESET_QUEUE (default password-resets) select the connection/queue independently of the general queue. Select an asynchronous driver, never sync for real recovery. Run the matching supervised worker, for example:
+
+```powershell
+php artisan queue:work database --queue=password-resets,default --tries=3 --timeout=60
+```
+
+SMTP errors retry and enter failed_jobs; monitor failed jobs and retry after fixing delivery. Queue push failures return a generic 503. The broker enforces a per-account 60-second throttle, hashed 60-minute single-use tokens, and password confirmation. Reset revokes personal tokens and database sessions; retain SESSION_DRIVER=database for cross-session revocation. Real inbox delivery is a release check; a log mailer does not deliver.
+
+## Cloud deployment requirements
+
+The hosting provider is intentionally unspecified. Preserve the React/Laravel/MySQL architecture.
+
+1. Build frontend assets using the locked Node dependencies (`npm ci`, `npm run build`). VITE_API_URL is public build-time configuration. With /api, configure production routing to Laravel; with a sibling API subdomain, set its HTTPS API URL before building. Serve dist with fallback to index.html for React routes while preserving API routes. Backend is an API and does not need its skeleton Vite assets built.
+2. Install PHP dependencies with `composer install --no-dev --prefer-dist --optimize-autoloader`. Serve backend/public; keep .env, source, and private storage outside the public document root. PHP storage and bootstrap/cache must be writable. Enforce HTTPS at the host and configure the proxy allowlist for TLS termination.
+3. Use APP_ENV=production, APP_DEBUG=false, SESSION_SECURE_COOKIE=true, SESSION_HTTP_ONLY=true, and a stable secret APP_KEY shared across instances. Use exact HTTPS frontend/reset/CORS URLs and stateful domains. Secure secrets using the provider. Existing keys are not regenerated during upgrades.
+4. Use managed MySQL/MariaDB with least-privilege runtime credentials, a backed-up database, and provider-required TLS via MYSQL_ATTR_SSL_CA. A separate migration identity can hold schema permissions. Apply reviewed pending migrations during deployment; never reset or seed real records. Test migrations on a representative staging copy first.
+5. Use database sessions and a shared cache. Example cache is database and logs go to stderr; configure host log collection, retention, and access controls. LOG_LEVEL should normally be info or warning in production. Local log files need collection/rotation if chosen. Do not use the log mailer with real reset links in production.
+6. Supervise the configured asynchronous recovery worker, restart workers after code/config updates, and monitor failed jobs. General QUEUE_CONNECTION alone does not change the recovery worker connection. Supply real SMTP credentials/sender and verify actual delivery. Keep worker timeout below the queue retry interval.
+7. Keep applicant documents on private durable storage when used; ephemeral local disk loses files between instances/redeployments. Configure the selected adapter, bucket/permissions, and RESUME_DISK. Never put resumes under a public disk or expose them with a public storage link. No uploads are added in this phase.
+8. After supplying production env values, cache config/routes/views using Laravel's production commands, and verify health endpoints and browser login/refresh/logout on the actual domains. /api/health is liveness only and does not assert DB/mail/worker readiness. Arrange database backups and restore verification, service monitoring, and writable runtime storage.
+
+No hosting, deployment, migration against existing data, or Git push was performed by the Phase 1.5 implementation. Production smoke tests need the chosen host and real service credentials.
+
+## Accessibility and release checks
+
+Target remains WCAG 2.2 AA without a conformance claim. Existing settings, skip link, route focus, dialog behavior, reduced-motion support, browser reading controls, and contrast presentation are preserved. Native paginated controls include labels, disabled states and live summaries.
+
+Release checks still include keyboard-only dialogs/navigation; NVDA or VoiceOver labels/errors/status; 200% zoom/320px reflow; contrast; reduced motion; mobile filters; login/refresh/logout; expiry; offline retry; consent grant/revocation; profile visibility restricted to hiring employers; actual email delivery; expired/reused links; private file permissions; and browser behavior behind production HTTPS/proxy/CORS configuration.
+
+Current verification details belong in PWDWORK_IMPLEMENTATION_REPORT.md. Historical October 22 checks are not evidence of a current run.

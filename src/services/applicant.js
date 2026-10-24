@@ -5,8 +5,11 @@ export async function getApplicantProfile() {
 export async function saveApplicantProfile(_user, profile) {
   return (await api.put("/profile", profile)).data.profile;
 }
-export async function getSavedJobs() {
-  return (await api.get("/applicant/saved-jobs")).data.jobs;
+export async function getSavedJobs(params = {}) {
+  return (await api.get("/applicant/saved-jobs", { params })).data;
+}
+export async function getSavedJobState(id) {
+  return (await api.get("/applicant/saved-jobs/" + id)).data.saved;
 }
 export async function saveJob(id) {
   await api.put("/applicant/saved-jobs/" + id);

@@ -37,7 +37,7 @@ class PhaseOneTest extends TestCase
 
     public function test_empty_jobs_are_empty_and_bad_filters_are_rejected(): void
     {
-        $this->getJson('/api/jobs')->assertOk()->assertExactJson(['jobs' => []]);
+        $this->getJson('/api/jobs')->assertOk()->assertJsonCount(0, 'jobs')->assertJsonPath('meta.total', 0);
         $this->getJson('/api/jobs?modes[]=Invented')->assertUnprocessable();
     }
 
@@ -210,6 +210,7 @@ class PhaseOneTest extends TestCase
         $this->app['env'] = 'local';
         $this->withHeader('Origin', 'http://localhost:5173');
         $this->postJson('/api/login', ['email' => 'nobody@example.com', 'password' => 'password'])->assertStatus(419);
+        $this->postJson('/api/register', ['name' => 'Candidate', 'email' => 'candidate@example.com', 'password' => 'password', 'role' => 'applicant'])->assertStatus(419);
     }
 
     public function test_demo_seed_keeps_old_jobs_and_existing_passwords(): void

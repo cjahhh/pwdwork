@@ -21,7 +21,7 @@ import NotFoundPage from "./pages/NotFoundPage.jsx";
 
 /**
  * App.jsx — route table for PWDWork.
- * Public pages are open. Dashboard routes use ProtectedRoute (role checks in Phase 3).
+ * Public pages are open. Dashboard routes enforce authenticated role checks.
  */
 function App() {
   return (

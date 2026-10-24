@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { fetchJob, applyToJob } from "../services/jobs.js";
-import { getSavedJobs, saveJob, unsaveJob } from "../services/applicant.js";
+import { getSavedJobState, saveJob, unsaveJob } from "../services/applicant.js";
 import { apiErrorMessage } from "../services/api.js";
 import { useAuth } from "../context/AuthContext.jsx";
 import { useResource } from "../hooks/useResource.js";
@@ -14,15 +14,15 @@ export default function JobDetailsPage() {
 function JobDetails({ id, user }) {
   const resource = useResource(() => fetchJob(id), id);
   const savedResource = useResource(
-    () => (user?.role === "applicant" ? getSavedJobs() : Promise.resolve([])),
+    () => (user?.role === "applicant" ? getSavedJobState(id) : Promise.resolve(false)),
     String(user?.id),
   );
   const [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
     [message, setMessage] = useState("");
-  const saved = Boolean(
-    savedResource.data?.some((job) => String(job.id) === id),
-  );
+  const [coverLetter, setCoverLetter] = useState("");
+  const [shareAccommodations, setShareAccommodations] = useState(false);
+  const saved = Boolean(savedResource.data);
   async function act(action) {
     if (user?.role !== "applicant") {
       setError("Sign in with an applicant account to apply or save jobs.");
@@ -33,15 +33,11 @@ function JobDetails({ id, user }) {
     setMessage("");
     try {
       if (action === "apply") {
-        await applyToJob(id);
+        await applyToJob(id, coverLetter, shareAccommodations);
         setMessage("Your application is saved to your account.");
       } else {
         await (saved ? unsaveJob(id) : saveJob(id));
-        savedResource.setData((items) =>
-          saved
-            ? items.filter((job) => String(job.id) !== id)
-            : [...items, { id }],
-        );
+        savedResource.setData(!saved);
         setMessage(
           saved ? "Job removed from saved jobs." : "Job saved to your account.",
         );
@@ -82,7 +78,20 @@ function JobDetails({ id, user }) {
           {error && <p role="alert">{error}</p>}
           <p role="status">{message}</p>
           {user?.role === "applicant" && (
-            <RequestState resource={savedResource} />
+            <>
+              <RequestState resource={savedResource} />
+              <label className="block">
+                <span className="form-label">Cover letter (optional)</span>
+                <textarea className="form-input" maxLength={10000} value={coverLetter}
+                  onChange={(event) => setCoverLetter(event.target.value)} />
+              </label>
+              <label className="filter-option">
+                <input type="checkbox" checked={shareAccommodations}
+                  onChange={(event) => setShareAccommodations(event.target.checked)} />
+                Share my standardized accommodation requests with this employer for this application.
+              </label>
+              <p>Your professional profile is shared when you apply. Keep medical details out of your bio, experience, cover letter, and resume. Manage accommodation sharing for existing applications in Your applications.</p>
+            </>
           )}
           <div className="flex flex-wrap gap-4">
             <button

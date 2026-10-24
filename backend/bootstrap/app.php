@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Middleware\EnsureUserRole;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -14,9 +15,13 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        // Only provider-controlled proxy addresses may supply client IP / HTTPS headers.
+        $middleware->trustProxies(
+            headers: Request::HEADER_X_FORWARDED_FOR | Request::HEADER_X_FORWARDED_PORT | Request::HEADER_X_FORWARDED_PROTO | Request::HEADER_X_FORWARDED_AWS_ELB,
+        );
         $middleware->statefulApi();
         $middleware->alias([
-            'role' => \App\Http\Middleware\EnsureUserRole::class,
+            'role' => EnsureUserRole::class,
         ]);
 
         $middleware->redirectGuestsTo(function (Request $request) {

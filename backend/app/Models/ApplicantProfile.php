@@ -16,6 +16,7 @@ class ApplicantProfile extends Model
         'location',
         'preferred_work_mode',
         'summary',
+        'experience',
         'resume_path',
         'pwd_id_number',
     ];

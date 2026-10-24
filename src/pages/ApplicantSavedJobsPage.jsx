@@ -1,11 +1,14 @@
 import { useState } from "react";
 import { getSavedJobs, unsaveJob } from "../services/applicant.js";
 import { apiErrorMessage } from "../services/api.js";
-import { useResource } from "../hooks/useResource.js";
+import { usePaginatedResource } from "../hooks/usePaginatedResource.js";
+import Pagination from "../components/Pagination.jsx";
 import RequestState from "../components/RequestState.jsx";
 import JobCard from "../components/JobCard.jsx";
+import { useAuth } from "../context/AuthContext.jsx";
 export default function ApplicantSavedJobsPage() {
-  const resource = useResource(getSavedJobs);
+  const { user } = useAuth();
+  const resource = usePaginatedResource(getSavedJobs, {}, user.id);
   const [error, setError] = useState(""),
     [busy, setBusy] = useState(null);
   async function remove(id) {
@@ -13,7 +16,7 @@ export default function ApplicantSavedJobsPage() {
     setError("");
     try {
       await unsaveJob(id);
-      resource.setData((items) => items.filter((job) => job.id !== id));
+      resource.reload();
     } catch (e) {
       setError(apiErrorMessage(e));
     } finally {
@@ -25,9 +28,9 @@ export default function ApplicantSavedJobsPage() {
       <h1>Saved jobs</h1>
       <RequestState resource={resource} />
       {error && <p role="alert">{error}</p>}
-      {resource.data?.length === 0 && <p>No saved jobs yet.</p>}
+      {resource.data?.meta.total === 0 && <p>No saved jobs yet.</p>}
       <div className="grid gap-6 md:grid-cols-2">
-        {resource.data?.map((job) => (
+        {resource.data?.jobs.map((job) => (
           <div key={job.id}>
             <JobCard job={job} />
             <p>Status: {job.status}</p>
@@ -37,6 +40,7 @@ export default function ApplicantSavedJobsPage() {
           </div>
         ))}
       </div>
+      <Pagination resource={resource} label="Saved job pages" disabled={busy !== null} />
     </main>
   );
 }

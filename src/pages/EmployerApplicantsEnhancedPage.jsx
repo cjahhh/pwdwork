@@ -1,13 +1,15 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
 import { useUi } from "../context/UiContext.jsx";
 import { apiErrorMessage } from "../services/api.js";
-import { useResource } from "../hooks/useResource.js";
+import { usePaginatedResource } from "../hooks/usePaginatedResource.js";
+import Pagination from "../components/Pagination.jsx";
+import EmployerJobFilter from "../components/EmployerJobFilter.jsx";
 import RequestState from "../components/RequestState.jsx";
 import {
   fetchEmployerApplications,
-  fetchEmployerJobs,
+  downloadApplicantResume,
   scheduleInterview,
   updateEmployerApplication,
 } from "../services/jobs.js";
@@ -19,6 +21,7 @@ const statuses = [
   "Reviewing",
   "Interview",
   "Shortlisted",
+  "Hired",
   "Rejected",
 ];
 function csvCell(value) {
@@ -29,11 +32,16 @@ function csvCell(value) {
 export default function EmployerApplicantsEnhancedPage() {
   const { user } = useAuth();
   const { showToast } = useUi();
-  const resource = useResource(fetchEmployerApplications, user.id);
-  const jobsResource = useResource(fetchEmployerJobs, user.id);
-  const applicants = resource.data || EMPTY;
-  const setApplicants = resource.setData;
-  const employerJobs = jobsResource.data || [];
+  const [filter, setFilter] = useState("All");
+  const [query, setQuery] = useState("");
+  const [jobFilter, setJobFilter] = useState(null);
+  const filters = {
+    ...(filter !== "All" ? { status: filter === "New" ? "submitted" : filter.toLowerCase() } : {}),
+    ...(jobFilter ? { job_id: jobFilter.id } : {}),
+    query,
+  };
+  const resource = usePaginatedResource(fetchEmployerApplications, filters, user.id);
+  const applicants = resource.data?.applicants || EMPTY;
   const schedules = Object.fromEntries(
     applicants.map((item) => [
       item.id,
@@ -46,34 +54,12 @@ export default function EmployerApplicantsEnhancedPage() {
   );
   const [error, setError] = useState("");
   const [updating, setUpdating] = useState(false);
-  const [filter, setFilter] = useState("All");
-  const [query, setQuery] = useState("");
-  const [jobFilter, setJobFilter] = useState("All");
+  const [exporting, setExporting] = useState(false);
   const [scheduleTarget, setScheduleTarget] = useState(null);
   const [scheduleDate, setScheduleDate] = useState("");
   const [scheduleTime, setScheduleTime] = useState("09:00");
   const [scheduleSaving, setScheduleSaving] = useState(false);
-  const jobs = [
-    ...new Set(
-      [
-        ...employerJobs.map((job) => job.title),
-        ...applicants.map((item) => item.jobTitle),
-      ].filter(Boolean),
-    ),
-  ];
-  const visible = useMemo(
-    () =>
-      applicants.filter((item) => {
-        const text =
-          `${item.name} ${item.email || ""} ${item.jobTitle} ${item.experience}`.toLowerCase();
-        return (
-          (filter === "All" || item.status === filter) &&
-          (jobFilter === "All" || item.jobTitle === jobFilter) &&
-          (!query.trim() || text.includes(query.toLowerCase().trim()))
-        );
-      }),
-    [applicants, filter, jobFilter, query],
-  );
+  const visible = applicants;
   async function updateStatus(id, status) {
     if (status === "Interview") {
       beginSchedule(applicants.find((item) => item.id === id));
@@ -83,19 +69,7 @@ export default function EmployerApplicantsEnhancedPage() {
     setError("");
     try {
       await updateEmployerApplication(id, status);
-      setApplicants((items) =>
-        items.map((item) =>
-          item.id === id
-            ? {
-                ...item,
-                status,
-                interviewDate: null,
-                interviewTime: null,
-                interviewNotes: null,
-              }
-            : item,
-        ),
-      );
+      resource.reload();
       showToast("Applicant updated", `Status changed to ${status}.`);
     } catch (e) {
       setError(apiErrorMessage(e));
@@ -120,18 +94,7 @@ export default function EmployerApplicantsEnhancedPage() {
     };
     try {
       await scheduleInterview(scheduleTarget.id, scheduleData);
-      setApplicants((current) =>
-        current.map((candidate) =>
-          candidate.id === scheduleTarget.id
-            ? {
-                ...candidate,
-                status: "Interview",
-                interviewDate: scheduleDate,
-                interviewTime: scheduleTime,
-              }
-            : candidate,
-        ),
-      );
+      resource.reload();
       showToast(
         "Interview scheduled",
         `${scheduleTarget.name} is scheduled for ${scheduleDate} at ${scheduleTime}.`,
@@ -143,44 +106,67 @@ export default function EmployerApplicantsEnhancedPage() {
       setScheduleSaving(false);
     }
   }
-  function exportCsv() {
-    const rows = [
-      [
-        "Applicant",
-        "Email",
-        "Job",
-        "Applied",
-        "Status",
-        "Interview date",
-        "Interview time",
-      ],
-      ...visible.map((item) => [
-        item.name,
-        item.email,
-        item.jobTitle,
-        item.appliedAt,
-        item.status,
-        schedules[item.id]?.date,
-        schedules[item.id]?.time,
-      ]),
-    ];
-    const blob = new Blob(
-      [rows.map((row) => row.map(csvCell).join(",")).join("\n")],
-      { type: "text/csv;charset=utf-8" },
-    );
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = "pwdwork-applicants.csv";
-    link.click();
-    URL.revokeObjectURL(url);
-    showToast("CSV exported", `${visible.length} applicants exported.`);
+  async function exportCsv() {
+    setExporting(true);
+    setError("");
+    try {
+      const exported = [];
+      let page = 1, lastPage = 1;
+      do {
+        const data = await fetchEmployerApplications({ ...filters, page, per_page: 50 });
+        exported.push(...data.applicants);
+        lastPage = data.meta.last_page;
+        page += 1;
+      } while (page <= lastPage);
+      const rows = [
+        [
+          "Applicant",
+          "Email",
+          "Job",
+          "Applied",
+          "Status",
+          "Interview date",
+          "Interview time",
+        ],
+        ...exported.map((item) => [
+          item.name,
+          item.email,
+          item.jobTitle,
+          item.appliedAt,
+          item.status,
+          item.interviewDate,
+          item.interviewTime,
+        ]),
+      ];
+      const blob = new Blob(
+        [rows.map((row) => row.map(csvCell).join(",")).join("\n")],
+        { type: "text/csv;charset=utf-8" },
+      );
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "pwdwork-applicants.csv";
+      link.click();
+      URL.revokeObjectURL(url);
+      showToast("CSV exported", `${exported.length} applicants exported.`);
+    } catch (e) {
+      setError(apiErrorMessage(e));
+    } finally {
+      setExporting(false);
+    }
+  }
+  async function downloadResume(id) {
+    setError("");
+    try {
+      await downloadApplicantResume(id);
+    } catch (e) {
+      setError(apiErrorMessage(e, "Resume unavailable. Please try again or ask the applicant to update it."));
+    }
   }
   return (
     <main className="bg-brand-gray-bg py-12 min-h-[60vh]">
       <div className="max-w-5xl mx-auto px-6">
         <RequestState resource={resource} />
-        <RequestState resource={jobsResource} />
         {error && <p role="alert">{error}</p>}
         <Link
           to="/employer/profile"
@@ -202,9 +188,10 @@ export default function EmployerApplicantsEnhancedPage() {
           <button
             type="button"
             onClick={exportCsv}
+            disabled={exporting || updating || scheduleSaving}
             className="bg-brand-blue text-white font-black px-5 py-3 rounded-xl"
           >
-            Export CSV
+            {exporting ? "Exporting..." : "Export filtered CSV"}
           </button>
         </div>
         <div className="bg-white rounded-2xl border border-gray-200 p-4 mb-6 grid sm:grid-cols-2 gap-3">
@@ -212,24 +199,15 @@ export default function EmployerApplicantsEnhancedPage() {
             <span className="form-label">Search applicants</span>
             <input
               value={query}
+              maxLength={255}
+              disabled={updating || scheduleSaving || exporting}
               onChange={(event) => setQuery(event.target.value)}
               className="form-input"
               placeholder="Name, email, experience..."
             />
           </label>
-          <label>
-            <span className="form-label">Job listing</span>
-            <select
-              value={jobFilter}
-              onChange={(event) => setJobFilter(event.target.value)}
-              className="form-input"
-            >
-              <option>All</option>
-              {jobs.map((job) => (
-                <option key={job}>{job}</option>
-              ))}
-            </select>
-          </label>
+          <EmployerJobFilter selected={jobFilter} onChange={setJobFilter} accountId={user.id}
+            disabled={updating || scheduleSaving || exporting} />
         </div>
         <div className="flex flex-wrap gap-2 mb-6">
           {statuses.map((item) => (
@@ -237,6 +215,7 @@ export default function EmployerApplicantsEnhancedPage() {
               key={item}
               type="button"
               aria-pressed={filter === item}
+              disabled={updating || scheduleSaving || exporting}
               onClick={() => setFilter(item)}
               className={`px-4 py-2 rounded-full text-sm font-extrabold border ${filter === item ? "bg-brand-teal text-white border-brand-teal" : "bg-white text-brand-dark border-gray-200"}`}
             >
@@ -320,8 +299,18 @@ export default function EmployerApplicantsEnhancedPage() {
                         {applicant.jobTitle}
                       </p>
                       <p className="text-sm text-gray-600 mt-2">
-                        Experience: {applicant.experience}
+                        Experience: {applicant.experience || "Not provided"}
                       </p>
+                      {applicant.headline && <p>{applicant.headline}</p>}
+                      <p>Skills: {applicant.skills.length ? applicant.skills.join(", ") : "Not provided"}</p>
+                      <p className="whitespace-pre-wrap">Professional summary: {applicant.summary || "Not provided"}</p>
+                      <p className="whitespace-pre-wrap">Cover letter: {applicant.coverLetter || "Not provided"}</p>
+                      {applicant.resumeAvailable ? (
+                        <button type="button" onClick={() => downloadResume(applicant.id)}>Download resume</button>
+                      ) : <p>Resume: Not provided</p>}
+                      {applicant.accommodationsShared ? (
+                        <p>Shared accommodation requests: {applicant.accommodations.join(", ") || "None selected"}</p>
+                      ) : <p>Accommodation requests are private.</p>}
                       {(applicant.interviewDate ||
                         schedules[applicant.id]?.date) && (
                         <p className="text-sm font-bold text-brand-blue mt-2">
@@ -341,7 +330,7 @@ export default function EmployerApplicantsEnhancedPage() {
                     </span>
                     <div className="flex flex-wrap gap-2">
                       <button
-                        disabled={updating || scheduleSaving}
+                        disabled={updating || scheduleSaving || exporting}
                         type="button"
                         onClick={() => beginSchedule(applicant)}
                         className="border border-brand-teal text-brand-teal font-extrabold px-3 py-2 rounded-lg"
@@ -349,7 +338,7 @@ export default function EmployerApplicantsEnhancedPage() {
                         Schedule interview
                       </button>
                       <select
-                        disabled={updating || scheduleSaving}
+                        disabled={updating || scheduleSaving || exporting}
                         aria-label={`Status for ${applicant.name}`}
                         value={applicant.status}
                         onChange={(event) =>
@@ -361,7 +350,9 @@ export default function EmployerApplicantsEnhancedPage() {
                         <option>Reviewing</option>
                         <option>Interview</option>
                         <option>Shortlisted</option>
+                        <option>Hired</option>
                         <option>Rejected</option>
+                        {!statuses.includes(applicant.status) && <option>{applicant.status}</option>}
                       </select>
                     </div>
                   </div>
@@ -382,6 +373,7 @@ export default function EmployerApplicantsEnhancedPage() {
             </div>
           )
         )}
+        <Pagination resource={resource} label="Employer applicant pages" disabled={updating || scheduleSaving || exporting} />
       </div>
     </main>
   );

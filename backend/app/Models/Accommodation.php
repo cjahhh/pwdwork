@@ -7,6 +7,12 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 
 class Accommodation extends Model
 {
+    public const STANDARD_LABELS = [
+        'Step-free or wheelchair-accessible entrance', 'Accessible restroom',
+        'Assistive technology support', 'Sign-language interpretation',
+        'Accessible interview options', 'Adjustable workspace',
+    ];
+
     protected $fillable = [
         'slug',
         'label',

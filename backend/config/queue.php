@@ -1,6 +1,8 @@
 <?php
 
 return [
+    'password_reset_connection' => env('PASSWORD_RESET_QUEUE_CONNECTION', 'database'),
+    'password_reset_queue' => env('PASSWORD_RESET_QUEUE', 'password-resets'),
 
     /*
     |--------------------------------------------------------------------------
