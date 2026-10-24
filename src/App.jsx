@@ -1,6 +1,7 @@
 import { Navigate, Routes, Route } from "react-router-dom";
 import Layout from "./components/Layout.jsx";
 import ProtectedRoute from "./components/ProtectedRoute.jsx";
+import RecommendationsPage from "./pages/RecommendationsPage.jsx";
 import HomePage from "./pages/HomePage.jsx";
 import FindJobsPage from "./pages/FindJobsPage.jsx";
 import JobDetailsPage from "./pages/JobDetailsPage.jsx";
@@ -50,6 +51,7 @@ function App() {
             </ProtectedRoute>
           }
         />
+        <Route path="/applicant/recommendations" element={<ProtectedRoute allowedRoles={["applicant"]}><RecommendationsPage /></ProtectedRoute>} />
         <Route path="/applicant/profile" element={<ProtectedRoute allowedRoles={["applicant"]}><ApplicantProfilePage /></ProtectedRoute>} />
         <Route path="/applicant/applications" element={<ProtectedRoute allowedRoles={["applicant"]}><ApplicantApplicationsEnhancedPage /></ProtectedRoute>} />
         <Route path="/applicant/saved-jobs" element={<ProtectedRoute allowedRoles={["applicant"]}><ApplicantSavedJobsPage /></ProtectedRoute>} />

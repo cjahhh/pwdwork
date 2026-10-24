@@ -17,3 +17,7 @@ export async function saveJob(id) {
 export async function unsaveJob(id) {
   await api.delete("/applicant/saved-jobs/" + id);
 }
+
+export async function getRecommendations(params = {}) {
+  return (await api.get("/applicant/recommendations", { params })).data;
+}

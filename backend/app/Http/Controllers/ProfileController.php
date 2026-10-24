@@ -39,12 +39,15 @@ class ProfileController extends Controller
                 }
             }, 3);
         } else {
-            $data = $request->validate(['name' => ['required', 'string', 'max:255'], 'headline' => ['nullable', 'string', 'max:255'], 'location' => ['nullable', 'string', 'max:255'], 'bio' => ['nullable', 'string', 'max:10000'], 'experience' => ['nullable', 'string', 'max:10000'], 'skills' => ['array', 'max:50'], 'skills.*' => ['string', 'max:100'], 'accommodations' => ['array', 'max:20'], 'accommodations.*' => ['string', 'max:255']]);
+            $data = $request->validate(['name' => ['required', 'string', 'max:255'], 'headline' => ['nullable', 'string', 'max:255'], 'location' => ['nullable', 'string', 'max:255'], 'bio' => ['nullable', 'string', 'max:10000'], 'experience' => ['nullable', 'string', 'max:10000'], 'preferredWorkMode' => ['nullable', 'in:Remote,Hybrid,Onsite'], 'skills' => ['array', 'max:50'], 'skills.*' => ['string', 'max:100'], 'accommodations' => ['array', 'max:20'], 'accommodations.*' => ['string', 'max:255']]);
             DB::transaction(function () use ($user, $data) {
                 $lockedUser = User::whereKey($user->id)->lockForUpdate()->firstOrFail();
                 abort_unless($lockedUser->status === 'active', 403);
                 $user->update(['name' => $data['name']]);
                 $profile = $user->applicantProfile()->updateOrCreate(['user_id' => $user->id], ['headline' => $data['headline'] ?? null, 'location' => $data['location'] ?? null, 'summary' => $data['bio'] ?? null, 'skills' => $data['skills'] ?? []]);
+                if (array_key_exists('preferredWorkMode', $data)) {
+                    $profile->update(['preferred_work_mode' => $data['preferredWorkMode']]);
+                }
                 if (array_key_exists('experience', $data)) {
                     $profile->update(['experience' => $data['experience']]);
                 }
@@ -66,6 +69,6 @@ class ProfileController extends Controller
         }
         $p = $user->applicantProfile;
 
-        return ['name' => $user->name, 'email' => $user->email, 'headline' => $p?->headline ?? '', 'location' => $p?->location ?? '', 'bio' => $p?->summary ?? '', 'experience' => $p?->experience ?? '', 'skills' => $p?->skills ?? [], 'accommodations' => $p?->accommodations->pluck('label')->all() ?? []];
+        return ['name' => $user->name, 'email' => $user->email, 'headline' => $p?->headline ?? '', 'location' => $p?->location ?? '', 'preferredWorkMode' => $p?->preferred_work_mode ?? '', 'bio' => $p?->summary ?? '', 'experience' => $p?->experience ?? '', 'skills' => $p?->skills ?? [], 'accommodations' => $p?->accommodations->pluck('label')->all() ?? []];
     }
 }

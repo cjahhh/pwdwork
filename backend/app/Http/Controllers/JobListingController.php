@@ -367,7 +367,7 @@ class JobListingController extends Controller
         ])->map(fn ($value) => strtolower(trim((string) $value)))->implode('|');
     }
 
-    private function jobPayload(JobListing $job, bool $owner = false): array
+    protected function jobPayload(JobListing $job, bool $owner = false): array
     {
         return [
             'id' => $job->id,

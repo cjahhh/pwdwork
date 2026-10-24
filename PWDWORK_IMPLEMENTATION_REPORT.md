@@ -140,3 +140,45 @@ Initial test runs corrected two expectation errors (a nonexistent audit-edit rou
 ## Phase 3 readiness
 
 The implemented Phase 2 code and isolated integration checks provide a verified basis for Phase 3 development. First complete the local/staging upgrade and administrator provisioning/review of existing pending listings so the developer environment matches the new schema. Production release remains subject to the deployment and manual checks above. Phase 3 itself was not implemented.
+
+
+## Phase 3 ? Fit & Access Match (24 October 2026)
+
+Implemented authenticated applicant recommendations at `/applicant/recommendations` and `GET /api/applicant/recommendations`. The API uses Sanctum, existing active-account/applicant role middleware, existing public eligibility scope, validated `page` (1?1,000,000) and `per_page` (1?50, default 12), existing jobs/meta response conventions, and private/no-store response caching. Scores are never added to public job APIs. No user ID parameter is accepted as the matching identity; identity always comes from authentication.
+
+The page includes real job records, verified employer badges, title/company/location/type/work arrangement, textual scores, confidence/coverage descriptions, matching skills, explanations, employer-reported support, loading/error/retry and empty states, pagination, Save Job through the existing API, and Apply for Job links into the existing detail/application/consent workflow. Applicant navigation links to recommendations. The home page shows three recommendations for applicants and retains featured jobs for visitors. Existing accessibility styles/settings apply, with semantic text and native buttons, links, lists and disclosure elements.
+
+### Formula and fairness
+
+Professional weights are skills 40, preferred work arrangement 25, and preferred location 15. Skills use case-insensitive literal substring occurrence in the job title or description; the fraction of distinct, nonblank, trimmed profile skills found earns the skills points. Work arrangement and location use trimmed case-insensitive exact equality. Missing employer work/location earns half that component's points and is explained as unknown. Nonmatching stated work/location earns zero; this never restricts access or applications. Missing applicant categories are omitted from the denominator. `score = round(100 ? earned points / available weights)`. No available professional category returns a null score and guidance, while retaining all eligible jobs. Coverage is displayed to avoid implying reliability from a sparse profile. For example, one of two skills plus matching work/location yields `(20 + 25 + 15) / 80 ? 100 = 75`.
+
+Accommodation preferences are optional and informational: matched labels are explicitly employer-reported, never independently verified; missing reports are unknown. They never change score or ordering. This deliberately replaces the suggested 20% access weight so disclosure and unreported support cannot disadvantage applicants. Diagnoses, PWD IDs, summaries and experience are not scoring inputs. Summaries and experience remain editable professional context; arbitrary free text is excluded to avoid extracting sensitive traits or inventing skills. Employer verification does not verify individual accommodation claims. Scores establish neither eligibility, hiring probability nor guaranteed accessibility. No automated applications/rejections or score-based access restrictions exist. Existing explicit per-application sharing consent remains unchanged.
+
+### Database, performance, and deployment
+
+No new tables, migrations, records, or dependencies. The existing `preferred_work_mode` field is now editable through `preferredWorkMode` on GET/PUT `/api/profile` (`Remote`, `Hybrid`, `Onsite`, or blank). Existing profile location doubles as preferred location. Existing skills, experience, summary and accommodation relations are reused. No migrations were applied to the user's database.
+
+Eligibility requires open + approved jobs, verified employer and active employer account. Database SQL computes scores and sorts score descending then ID descending before pagination; only one page of jobs is hydrated. Relationships are eager loaded, avoiding per-job queries. Recalculation occurs on every API request, so the next fetch reflects profile, listing, employer and moderation changes without cache invalidation or workers. Pagination is stable for unchanged inputs; concurrent listing/profile changes can shift offset pages.
+
+Production uses the existing environment-based API, HTTPS/cookie/CORS/Sanctum configuration and persistent MySQL storage. Build frontend with `npm run build`; no special service, paid API, worker or Phase 3 migration is required. No deployment or GitHub push was performed.
+
+### Files
+
+Created `backend/app/Services/JobMatchService.php`, `backend/app/Http/Controllers/RecommendationController.php`, `backend/tests/Feature/PhaseThreeTest.php`, and `src/pages/RecommendationsPage.jsx`.
+Modified `backend/app/Http/Controllers/JobListingController.php` (protected reusable payload), `ProfileController.php`, `backend/routes/api.php`, `src/App.jsx`, `src/components/Navbar.jsx`, `src/pages/HomePage.jsx`, `src/pages/ProfilePage.jsx`, `src/services/applicant.js`, `scripts/browser-smoke.mjs`, and this report.
+
+### Limitations and Phase 4 readiness
+
+Literal skills matching does not understand synonyms, negation, proficiency, years of experience or actual hiring requirements. Locations are exact text comparisons, with no distance/geocoding or remote geographic eligibility inference. One work arrangement and location preference are supported by the existing schema. Summary/experience and employment type do not influence ranking. Matching scans eligible listings in SQL; very large catalogs should be profiled with MySQL EXPLAIN before introducing a search index. No formal accessibility audit or live cloud deployment was performed. Automated mutation tests use isolated SQLite. Read-only ranking/pagination/explanation and weighted-expression smoke checks also passed against the configured MySQL database, without changing records; broader production MySQL integration/load testing remains necessary. Phase 4 can build on the authenticated API, explainable formula and tests, with curated job skill fields, preference research, and measured search/index improvements before any more complex ranking.
+
+### Verification
+
+- `php artisan test`: 56 passed, 566 assertions, including six Phase 3 tests covering authorization, role validation, empty/incomplete profiles, normalized skills, work/location scoring, unknown employer information, optional accommodations, sensitive-field exclusion, identity isolation, all publication gates, stable ordering/pagination, profile API updates and live recalculation. Existing saved jobs, applications, consent and admin regression tests pass.
+- `npm.cmd run build`: passed; production bundle generated.
+- `npm.cmd run lint`: passed.
+- PHP syntax checks across app/routes/tests: passed; Laravel Pint checks passed for changed/new PHP files.
+- `git diff --check` and browser script syntax check: passed.
+- Read-only configured MySQL smoke checks: ranking, pagination, eligibility, explanations and bound weighted SQL passed; one existing eligible listing sampled. No database mutations or migrations.
+- Browser suite results follow below. The initial sandboxed Chromium startup failed; running the isolated suite outside the sandbox resolved startup. One Phase 3 test selector was corrected from button to link before rerunning; this was a test issue, not an application failure.
+
+- `node scripts/browser-smoke.mjs`: final full run passed using isolated temporary SQLite fixtures and browser profile. Verified baseline search, authentication, saves, applications/consent, employer workflows, recovery, admin verification/moderation/reporting/suspension, responsive layout and persisted accessibility settings; Phase 3 recommendations/explanations, save action, apply detail link, personalized home and 320px reflow passed with no uncaught browser exceptions. Existing MySQL records were untouched.

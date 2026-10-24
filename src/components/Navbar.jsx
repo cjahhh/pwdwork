@@ -26,6 +26,7 @@ function Navbar() {
       : user?.role === "applicant"
         ? [
             { label: "Find Jobs", to: "/jobs" },
+            { label: "Recommended Jobs", to: "/applicant/recommendations" },
             { label: "Profile", to: "/applicant/profile" },
             { label: "Applications", to: "/applicant/applications" },
             { label: "Saved Jobs", to: "/applicant/saved-jobs" },

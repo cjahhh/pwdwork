@@ -66,7 +66,7 @@ function Editor({ initial, employer }) {
     : [
         ["name", "Full name"],
         ["headline", "Professional headline"],
-        ["location", "Location"],
+        ["location", "Preferred job location (optional, exact city or location)"],
         ["bio", "Professional summary"],
         ["experience", "Relevant work or volunteer experience"],
       ];
@@ -111,6 +111,8 @@ function Editor({ initial, employer }) {
       ))}
       {!employer && (
         <>
+          <p>Skills and work/location preferences improve Fit &amp; Access Match. Summary and experience help employers understand your background; they are not scored. Accommodation disclosure is optional and never changes your score.</p>
+          <label className="block"><span className="form-label">Preferred work arrangement (optional)</span><select className="form-input" value={profile.preferredWorkMode || ""} onChange={(e) => update("preferredWorkMode", e.target.value)}><option value="">No preference</option>{["Remote", "Hybrid", "Onsite"].map(mode => <option key={mode}>{mode}</option>)}</select></label>
           <label className="block">
             <span className="form-label">Skills (comma separated)</span>
             <input
@@ -120,7 +122,7 @@ function Editor({ initial, employer }) {
             />
           </label>
           <fieldset>
-            <legend>Requested accommodations</legend>
+            <legend>Requested accommodations (optional)</legend>
             <p>These stay private unless you choose to share them for an application. Professional summaries and experience are visible to employers you apply to; do not include medical diagnoses.</p>
             {[
               ...new Set([...accommodationOptions, ...profile.accommodations]),

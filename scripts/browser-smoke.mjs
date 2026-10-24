@@ -353,6 +353,49 @@ try {
   assert.ok(await client.evaluate("document.documentElement.scrollWidth <= 320"), "High-contrast admin overflow");
   assert.deepEqual(client.exceptions, [], "Uncaught Phase 2 browser exceptions");
   passed("admin narrow-screen layout and persistent dark/high-contrast settings");
+  await client.send("Emulation.clearDeviceMetricsOverride");
+  await logout(); await login("candidate@browser.example");
+  await go("/applicant/recommendations");
+  await check("document.body.innerText.includes('Fit & Access Match:') && document.querySelectorAll('main section[aria-label]').length > 0", "recommendations loaded from API");
+  await check("document.querySelector('main section[aria-label] button')?.textContent === 'Saved'", "already-saved recommendation label");
+  await client.evaluate("[...document.querySelectorAll('main a')].find(el => el.textContent === 'Apply for Job').click()");
+  await check("document.body.innerText.includes('Unsave job')", "existing saved recommendation detail");
+  await click("Unsave job");
+  await check("document.body.innerText.includes('Job removed from saved jobs.')", "prepare unsaved recommendation");
+  await go("/applicant/recommendations");
+  await check("document.querySelector('main section[aria-label] button')?.textContent === 'Save Job'", "recommendation reflects existing unsave");
+  await client.evaluate(`(() => {
+    window.recommendationSaveRequests = 0;
+    const originalOpen = XMLHttpRequest.prototype.open;
+    XMLHttpRequest.prototype.open = function(method, url, ...args) {
+      if (method.toUpperCase() === 'PUT' && String(url).includes('/applicant/saved-jobs/')) window.recommendationSaveRequests++;
+      return originalOpen.call(this, method, url, ...args);
+    };
+    const button = document.querySelector('main section[aria-label] button');
+    button.focus(); button.click(); button.click();
+  })()`);
+  await check("document.body.innerText.includes('Job saved. Find it in Saved Jobs.')", "recommendation save workflow");
+  assert.equal(await client.evaluate("document.querySelector('main section[aria-label] button').textContent"), "Saved");
+  assert.equal(await client.evaluate("document.querySelector('main section[aria-label] button').getAttribute('aria-disabled')"), "true");
+  assert.ok(await client.evaluate("document.activeElement === document.querySelector('main section[aria-label] button')"), "Saved button retains keyboard focus");
+  await client.evaluate("document.querySelector('main section[aria-label] button').click()");
+  assert.equal(await client.evaluate("window.recommendationSaveRequests"), 1, "Duplicate save requests prevented");
+  await reload();
+  await check("document.querySelector('main section[aria-label] button')?.textContent === 'Saved'", "persisted recommendation saved state");
+  await client.evaluate("[...document.querySelectorAll('main a')].find(el => el.textContent === 'Apply for Job').click()");
+  await check("location.pathname.startsWith('/jobs/') && document.body.innerText.includes('Apply')", "recommendation application detail workflow");
+  await check("document.body.innerText.includes('Unsave job')", "recommendation shares detail saved state");
+  await click("Unsave job");
+  await check("document.body.innerText.includes('Job removed from saved jobs.')", "existing unsave workflow");
+  await go("/applicant/recommendations");
+  await check("document.querySelector('main section[aria-label] button')?.textContent === 'Save Job'", "recommendation reflects removed saved job");
+  await go("/");
+  await check("document.body.innerText.includes('Recommended for You') && document.body.innerText.includes('Fit & Access Match:')", "personalized home section");
+  await go("/applicant/recommendations");
+  await client.send("Emulation.setDeviceMetricsOverride", { width: 320, height: 800, deviceScaleFactor: 1, mobile: false });
+  assert.ok(await client.evaluate("document.documentElement.scrollWidth <= 320"), "Recommendations overflow at 320px");
+  assert.deepEqual(client.exceptions, [], "Uncaught recommendation browser exceptions");
+  passed("Phase 3 recommendation explanations, save/apply links, personalized home and mobile layout");
   console.log("Browser smoke checks passed. Only isolated temporary SQLite fixtures were used.");
 } catch (error) {
   if (client) {

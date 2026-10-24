@@ -6,6 +6,7 @@ use App\Http\Controllers\JobListingController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\PasswordController;
 use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\RecommendationController;
 use App\Http\Controllers\ReportController;
 use App\Http\Requests\RequestReviewRequest;
 use App\Models\JobListing;
@@ -62,6 +63,7 @@ Route::middleware(['auth:sanctum', 'role:applicant,employer,admin'])->group(func
     Route::get('/profile', [ProfileController::class, 'show'])->middleware('role:applicant,employer');
     Route::put('/profile', [ProfileController::class, 'update'])->middleware('role:applicant,employer');
     Route::get('/applicant/saved-jobs', [JobListingController::class, 'saved'])->middleware('role:applicant');
+    Route::get('/applicant/recommendations', [RecommendationController::class, 'recommendations'])->middleware('role:applicant');
     Route::get('/applicant/saved-jobs/{jobListing}', [JobListingController::class, 'savedState'])->middleware('role:applicant');
     Route::put('/applicant/saved-jobs/{jobListing}', [JobListingController::class, 'saveJob'])->middleware('role:applicant');
     Route::delete('/applicant/saved-jobs/{jobListing}', [JobListingController::class, 'unsaveJob'])->middleware('role:applicant');

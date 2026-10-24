@@ -1,3 +1,5 @@
+import RecommendationsPage from "./RecommendationsPage.jsx";
+import { useAuth } from "../context/AuthContext.jsx";
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { fetchJobs } from "../services/jobs.js";
@@ -7,6 +9,7 @@ import JobGrid from "../components/JobGrid.jsx";
 
 function HomePage() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [query, setQuery] = useState("");
   const [location, setLocation] = useState("");
 
@@ -108,7 +111,7 @@ function HomePage() {
         </div>
       </section>
 
-      <section id="jobs-section" className="bg-brand-gray-bg py-12 border-b border-gray-200">
+      {user?.role === "applicant" ? <RecommendationsPage key={user.id} preview /> : <section id="jobs-section" className="bg-brand-gray-bg py-12 border-b border-gray-200">
         <div className="max-w-[1440px] mx-auto px-6 lg:px-12">
           <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-7">
             <div>
@@ -150,7 +153,7 @@ function HomePage() {
             </Link>
           </div>
         </div>
-      </section>
+      </section>}
 
     </main>
   );
