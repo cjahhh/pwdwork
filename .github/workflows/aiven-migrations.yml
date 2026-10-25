@@ -68,6 +68,13 @@ jobs:
       - name: Build existing image without deployment secrets
         run: docker build --pull --tag pwdwork-aiven:manual .
 
+      - name: Check runtime permissions and autoload without network or secrets
+        run: |
+          docker run --rm --network none --user www-data --workdir /var/www/backend \
+            --cap-drop ALL --security-opt no-new-privileges \
+            --mount "type=bind,src=$GITHUB_WORKSPACE/.github/scripts/aiven-migrations.php,dst=/run/aiven-migrations.php,readonly" \
+            --entrypoint php pwdwork-aiven:manual /run/aiven-migrations.php --runtime-check
+
       - name: Run guarded operation with private mounted CA
         shell: bash
         env:
@@ -94,9 +101,15 @@ jobs:
             exit 1
           fi
           printf '%s\n' "$AIVEN_CA_PEM" > "$private_dir/ca.pem"
-          chmod 644 "$private_dir/ca.pem"
+          # Match the image user so the read-only mount remains private (0600).
+          container_uid="$(docker run --rm --network none --entrypoint id pwdwork-aiven:manual -u www-data)"
+          [[ "$container_uid" =~ ^[0-9]+$ ]]
+          chmod 600 "$private_dir/ca.pem"
+          sudo chown "$container_uid" "$private_dir/ca.pem"
           unset AIVEN_CA_PEM
+          # LOG_CHANNEL carries literal quotes so Laravel resolves the string null.
           docker run --rm --name "$container_name" \
+            --user www-data --workdir /var/www/backend \
             --cap-drop ALL --security-opt no-new-privileges \
             --mount "type=bind,src=$private_dir/ca.pem,dst=/run/aiven-ca.pem,readonly" \
             --mount "type=bind,src=$GITHUB_WORKSPACE/.github/scripts/aiven-migrations.php,dst=/run/aiven-migrations.php,readonly" \

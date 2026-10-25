@@ -95,6 +95,44 @@ forwarded by environment-variable name, never interpolated into command strings.
 Do not enable shell tracing, dump Docker metadata, or add environment logging.
 Actions has only `contents: read`, and checkout does not persist a GitHub token.
 
+The container runs as the image's `www-data` user, matching the ownership and
+0750 directory permissions of `storage` and `bootstrap/cache`. Root with
+`--cap-drop ALL` cannot bypass those permissions. The runner determines the
+image's numeric `www-data` UID and assigns the 0600 CA file to it before mounting;
+the enclosing runner temporary directory remains 0700. Before the secret-bearing
+step, a container with networking disabled checks PHP extensions, application
+files, writable Laravel directories and Composer autoloading. This check does
+not bootstrap Laravel or execute migrations.
+
+### Diagnosing and retrying PREVIEW startup
+
+The helper prints fixed checkpoints for runtime permissions/autoloading, Laravel
+construction, configuration-cache checks, each console bootstrapper, logging,
+database configuration/TLS, migration discovery and the selected operation. A
+failure prints `Failed stage:` without framework exception messages, traces,
+credentials, DSNs or SQL bindings. Known safety-check failures retain their
+fixed, non-sensitive explanation.
+
+The previous workflow had a confirmed permission mismatch: the default root
+process dropped every capability, while Laravel cache/storage directories were
+owned by `www-data` with no access for other users. The workflow now uses
+`www-data` explicitly. The original failed cloud run has not been reproduced
+against Aiven, so its precise exception is not confirmed. Docker's workdir and
+Composer layout match `/var/www/backend`; the helper now uses absolute paths for
+autoloading, the Laravel bootstrap, Artisan and migration discovery.
+
+The workflow's quoted `LOG_CHANNEL="null"` is intentional: Laravel strips those
+literal quotes to obtain the string `null`, which names the configured Monolog
+NullHandler channel. Unquoted `LOG_CHANNEL=null` would become PHP null. The helper
+checks the effective channel and resolves the logger before database discovery.
+
+After separately reviewing and approving these changes on `main`, start a **new**
+manual run on `main` with **PREVIEW** selected. Do not simply rerun an old failed
+run, which uses its old commit. Check that the network-free runtime check passes,
+then review the checkpoints, full commit SHA and proposed SQL. PREVIEW may create
+only Laravel migration bookkeeping, as described above. Leave APPLY for a
+separate approved invocation with its existing phrase and reviewed-SHA checks.
+
 PDO/framework exception details and failed Artisan output are withheld to avoid
 leaking credentials. Successful Artisan output redacts credential values and is
 prefixed to prevent runner-command injection. A failed connection should prompt
