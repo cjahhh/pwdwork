@@ -94,7 +94,7 @@ jobs:
             exit 1
           fi
           printf '%s\n' "$AIVEN_CA_PEM" > "$private_dir/ca.pem"
-          chmod 600 "$private_dir/ca.pem"
+          chmod 644 "$private_dir/ca.pem"
           unset AIVEN_CA_PEM
           docker run --rm --name "$container_name" \
             --cap-drop ALL --security-opt no-new-privileges \
