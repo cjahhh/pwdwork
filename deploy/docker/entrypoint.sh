@@ -33,6 +33,18 @@ else
         /opt/pwdwork/fastcgi-app.conf.template > /etc/nginx/fastcgi-app.conf
 fi
 # Restrict substitution so Nginx's own variables survive unchanged.
+# Prepare Nginx temporary directories on every container startup.
+mkdir -p /tmp/nginx/client \
+         /tmp/nginx/fastcgi \
+         /tmp/nginx/proxy \
+         /tmp/nginx/uwsgi \
+         /tmp/nginx/scgi
+
+# Allow the Nginx worker to access its temporary directories.
+chown -R www-data:www-data /tmp/nginx
+chmod -R 750 /tmp/nginx
+
+# Generate and validate Nginx configuration.
 envsubst '${PORT}' < /etc/nginx/nginx.conf.template > /etc/nginx/nginx.conf
 nginx -t
 php-fpm -t
