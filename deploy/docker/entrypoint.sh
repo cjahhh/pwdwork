@@ -14,6 +14,9 @@ export PORT="${PORT:-10000}"
 # Cache only at runtime, after Render injects secrets. Never echo configuration.
 rm -f bootstrap/cache/config.php
 php /opt/pwdwork/check-environment.php
+# Root readability does not prove the FPM worker can open Render Secret Files.
+# runuser initializes www-data's supplementary groups, as FPM does for workers.
+runuser -u www-data -- php /opt/pwdwork/check-environment.php --ca-readable
 php artisan config:cache --no-ansi --quiet
 php artisan view:cache --no-ansi --quiet
 chown -R www-data:www-data storage bootstrap/cache

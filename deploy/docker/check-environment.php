@@ -5,6 +5,20 @@ use App\Support\RuntimeRequirements;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Encryption\Encrypter;
 
+// Standalone worker permission check: no Laravel bootstrap or DB connection.
+// Actually open the configured file, but never read or print its contents/path.
+if (($argv[1] ?? '') === '--ca-readable') {
+    $ca = getenv('MYSQL_ATTR_SSL_CA');
+    $handle = is_string($ca) && $ca !== '' && @is_file($ca) ? @fopen($ca, 'rb') : false;
+    if ($handle === false) {
+        fwrite(STDERR, "Container configuration: Aiven CA cannot be opened by the application user. Check Secret File path and group access.\n");
+        exit(1);
+    }
+    fclose($handle);
+    fwrite(STDOUT, "Container configuration: application user can open the Aiven CA.\n");
+    exit(0);
+}
+
 require '/var/www/backend/vendor/autoload.php';
 $app = require '/var/www/backend/bootstrap/app.php';
 $app->make(Kernel::class)->bootstrap();

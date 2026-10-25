@@ -22,5 +22,11 @@ jobs:
       - name: Verify PHP inside Docker
         run: docker run --rm --entrypoint php pwdwork-render:check -v
 
+      - name: Test Render Secret File access without network or credentials
+        run: |
+          docker run --rm --network none \
+            --mount "type=bind,src=$GITHUB_WORKSPACE/.github/scripts/test-render-secret-access.sh,dst=/run/test-render-secret-access.sh,readonly" \
+            --entrypoint sh pwdwork-render:check /run/test-render-secret-access.sh
+
       - name: Confirm image exists
         run: docker image inspect pwdwork-render:check

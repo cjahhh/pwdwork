@@ -13,7 +13,7 @@ RUN npm run build
 FROM php:8.4.27-fpm-bookworm AS php-base
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-        ca-certificates curl gettext-base nginx tini unzip fonts-dejavu-core \
+        ca-certificates curl gettext-base nginx tini unzip util-linux fonts-dejavu-core \
         libfreetype6 libjpeg62-turbo libpng16-16 libzip4 libicu72 \
         libfreetype6-dev libjpeg62-turbo-dev libpng-dev libzip-dev libicu-dev \
     && docker-php-ext-configure gd --with-freetype --with-jpeg \
@@ -43,6 +43,10 @@ RUN mkdir -p storage/framework/cache/data storage/framework/sessions storage/fra
     && php artisan package:discover --no-ansi
 
 FROM php-base AS runtime
+# Render runtime Secret Files are accessible through supplementary GID 1000.
+# Reuse that GID if the base image already defines it; preserve www-data's group.
+RUN if ! getent group 1000 >/dev/null; then groupadd --gid 1000 render-secrets; fi \
+    && usermod --append --groups "$(getent group 1000 | cut -d: -f1)" www-data
 COPY --from=vendor /var/www/backend /var/www/backend
 COPY backend/public/index.php ./public/index.php
 COPY --from=frontend /build/dist /var/www/frontend
