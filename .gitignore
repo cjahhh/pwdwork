@@ -23,3 +23,5 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+backend/storage/framework/composer-cache/
+backend/storage/framework/pdf-check/

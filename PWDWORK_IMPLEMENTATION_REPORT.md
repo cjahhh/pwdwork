@@ -270,3 +270,86 @@ Final Phase 4 verification:
 Accommodation-request API exception responses now use safe messages even with debug mode enabled. Unauthorized or missing request details/messages/history/actions keep their existing HTTP 403/404 authorization behavior and return no model names, exception details, database information, stack traces or private data. Not-found responses display: "Accommodation request not found or you do not have permission to view it." Unexpected failures use a generic message; field validation errors remain useful and rate-limit headers are preserved. This handling is scoped to accommodation-request endpoints; ownership checks are unchanged. Notifications now separate the related-page link and mark-as-read button with responsive horizontal/vertical spacing, preserving control order and keyboard access.
 
 Verification: 72 Laravel tests passed (790 assertions), including unrelated-company direct API access, identical safe errors for missing/unauthorized IDs, protected message/history/actions, debug on/off and simulated internal failures. Full browser regression passed with isolated temporary SQLite fixtures, including the accessible unauthorized direct-link message and computed notification spacing; the previously documented native keyboard injection fallback remains in use. React build, lint, PHP syntax, Pint and diff checks passed. No existing MySQL records, schema, deployment or GitHub push were changed.
+
+## Phase 5 â€” Accessible Resume Builder (25 October 2026)
+
+### Delivered behavior
+
+Applicants can manage multiple private resumes at `/applicant/resumes`: create, edit, preview, download PDF, duplicate and delete, with titles, versions, last-updated dates and pagination. The structured editor includes personal/contact information, summary/objective, education, work, volunteering, skills, certifications/training, projects, languages and optional references. Only the name is required in document content; employment history and sensitive disclosures are not required. Repeatable entries have native keyboard-operable add/remove/move controls. Templates share one underlying document: Classic Professional uses traditional serif typography, and Modern Minimal uses sans-serif typography with restrained teal headings. Both are single-column.
+
+A confirmation gates optional profile import. The importer selects name, email, location, skills, summary and combined work/volunteer experience only, and never changes the profile. Existing experience is free text, so it is initially imported into Work experience and can be edited or separated into volunteering manually. Applicants should review imported prose because free text might contain information they previously entered themselves. PWD identifiers, private phone fields, accommodation settings and private discussions are not fetched by import.
+
+Save validates the complete document, increments a version, and refreshes the preview. Optimistic concurrency returns 409 for stale saves. Client locks prevent repeated-click saves/shares; controls indicate busy state and announce save/errors. Native navigation confirmation protects unsaved editor changes, including router back navigation; tab close/reload uses browser beforeunload. Drafts remain in memory and are not stored in local/session storage. The root now uses React Router's data router to support its navigation blocker; existing routes and providers remain intact. The editor is lazy loaded.
+
+### Sharing and privacy
+
+After applying, an applicant chooses a saved resume on their application page and explicitly consents to sharing that document. Accommodation consent remains separate. A transaction copies title, template, version and content into an application snapshot; personal edits and deletion do not change it. An explicit subsequent share replaces the active snapshot. Applicants can revoke future access at any application status. Deleting a personal resume and revoking a share are separate actions with clear guidance. Previously viewed/downloaded copies cannot be recalled.
+
+Only the applicant who owns the application and the employer who owns its job's company can read an active snapshot. Employers cannot access personal resume CRUD/PDF routes or browse unrelated documents. No public share links are created, and neither creating a resume nor submitting a job application automatically shares it. Existing uploaded profile resumes retain their earlier workflow; builder documents do not enter that storage path or legacy endpoint. Application status, Fit & Access Match scoring, profile records, verification, moderation and accommodation state are not changed by resume actions.
+
+Application lists return only eager-loaded active-share metadata, not content. Resume selection fetches paginated choices when opened, avoiding per-row requests on page load. Owner/role checks, input allowlists, size limits, transactions, active-account rechecks under lock, throttling and private no-store responses protect the new endpoints. Unknown content keys are rejected. Blade escapes all text; applicant HTML, scripts, images and external resource URLs are not interpreted. Unexpected and unauthorized resume errors return sanitized JSON even with local debug enabled. Database/storage paths and traces are excluded from responses.
+
+### Schema and API
+
+One additive migration: `backend/database/migrations/2026_10_25_000001_create_resumes_tables.php`.
+
+- `resumes`: applicant foreign key, title, template, validated JSON content, version, timestamps and applicant/updated index.
+- `resume_application_shares`: unique application foreign key, nullable source-resume key, copied title/template/content/version, shared timestamp and revocation timestamp. Source deletion nulls only the reference. Application deletion cascades its snapshot.
+
+The migration was **not applied to the existing MySQL database**. New endpoints return a safe 503 while it is pending; existing application endpoints tolerate its absence. No existing records were imported, replaced or reset.
+
+All new endpoints require Sanctum authentication. Applicant routes under `/api/applicant/resumes` provide GET/POST collection, POST `import-profile`, GET/PUT/DELETE `{id}`, POST `{id}/duplicate`, GET `{id}/preview`, and GET `{id}/pdf`. Application routes under `/api/applications/{id}/built-resume` provide GET metadata, PUT explicit share, DELETE revoke, GET `preview` and GET `pdf`. Only the owning applicant may write; reads are scoped to the application participants. `PHASE5-SETUP.md` includes request details, limits and the complete endpoint table.
+
+### PDF generation
+
+Composer installs and locks Dompdf 3.1.6, php-font-lib 1.0.2, php-svg-lib 1.0.2, masterminds/html5 2.11.0 and sabberworm/php-css-parser 9.5.0. The project had no existing PDF renderer. The implementation follows Dompdf's [official documentation](https://github.com/dompdf/dompdf) and uses bundled DejaVu fonts, A4 paper, 18 mm margins, wrapping long words and natural multi-page flow. Preview and PDF share one escaped Blade document. Remote resources, embedded PHP, JavaScript and resource protocols are disabled. PDFs are generated in memory after authorization with safe descriptive filenames; no document is published to storage or a paid service.
+
+Executed deeper verification generated synthetic **eight-page PDFs for each template**. Pypdf confirmed searchable text including the final experience entry, name, skills and languages, and A4 dimensions. PyMuPDF confirmed text bounds stayed inside the tested page margins and no raster images replaced text. First-page renders of both templates were visually inspected. The fixture generator does not access a database. Optional Python inspection dependencies were installed only into an ignored local tooling directory, not into production dependencies.
+
+PDFs are not validated PDF/UA and may lack tagging/assistive-technology reading-order guarantees. The HTML preview offers structured headings and text. Browser preview is continuous and may paginate/render fonts differently from the PDF. DejaVu does not guarantee coverage for CJK, emoji or all complex scripts; additional fonts and validation are required for those uses. Extreme content and fonts still need release review.
+
+### File inventory
+
+New backend files:
+
+- `app/Http/Controllers/ResumeController.php`
+- `app/Http/Middleware/EnsureResumesReady.php`
+- `app/Http/Requests/SaveResumeRequest.php`, `ShareResumeRequest.php`
+- `app/Models/Resume.php`, `ResumeApplicationShare.php`
+- `app/Services/ResumeRenderer.php`
+- `database/migrations/2026_10_25_000001_create_resumes_tables.php`
+- `resources/views/resumes/document.blade.php`
+- `tests/Feature/PhaseFiveTest.php`, `tests/resume-pdf-fixture.php`
+
+New frontend/tooling/documentation files:
+
+- `src/pages/ResumesPage.jsx`, `ResumesPage.css`
+- `src/components/ResumeSharing.jsx`
+- `src/services/resumes.js`
+- `scripts/verify-resume-pdf.py`
+- `PHASE5-SETUP.md`
+
+Modified integration files: `backend/routes/api.php`, `backend/bootstrap/app.php`, `backend/app/Models/Application.php`, `backend/app/Http/Controllers/JobListingController.php`, `backend/composer.json`, `backend/composer.lock`, `backend/tests/Feature/PhaseFourTest.php` (schema mock now also accounts for the new optional table), `src/main.jsx`, `src/App.jsx`, `src/components/Navbar.jsx`, both enhanced applicant/employer application pages, `scripts/browser-smoke.mjs`, `.gitignore`, and this report. No `.env` credentials were read or changed.
+
+### Executed automated checks
+
+- Laravel suite: **84 tests passed, 892 assertions**, including **12 Phase 5 tests** and all existing Phases 1â€“4 tests. All writes/migrations in the Laravel suite use guarded, isolated SQLite memory databases.
+- Phase 5 tests cover structured CRUD, pagination metadata, duplication, preview/PDF, stale-save rejection, owner/cross-account boundaries, explicit consent, company authorization, unshared/revoked access, snapshot stability after edits/deletion, profile privacy, escaped malicious input, size limits, unauthenticated access, sanitized debug errors, safe pre-migration operation and in-flight suspension.
+- React production build passed. Vite reports a non-blocking main-bundle size warning (~504 kB minified); the resume editor is split into a separate lazy-loaded chunk.
+- Frontend lint passed without findings.
+- Laravel Pint checks passed for all 15 changed/new PHP files; PHP syntax checks passed for those files.
+- `git diff --check` passed.
+- Both eight-page PDF extraction/layout checks passed as described above.
+
+### Deployment and remaining manual review
+
+Use `PHASE5-SETUP.md` for the exact backup, migration-preview and single-migration commands. The existing MySQL database remains untouched. Actual MySQL resume writes/concurrency tests should be run in staging after the reviewed upgrade. No deployment or GitHub push occurred.
+
+The web editor inherits existing text-size, high-contrast, dark-mode, reduced-motion, dyslexia font and large-cursor preferences. Fields are labeled, status/errors announced, focus visible, layout flexible and sorting has button alternatives. PDF print typography is independent of theme settings. Full WCAG 2.2 AA and PDF/UA conformance are not claimed. Manual NVDA/JAWS/VoiceOver checks, native navigation confirmation, browser prompt behavior, full keyboard-only export, 200â€“400% zoom and additional language/font coverage remain release checks. There is no autosave, draft recovery after closing the browser, public sharing, photo/rich-text support or historical snapshot archive. Retention policies, backups, HTTPS/session configuration, private production logs and writable framework cache/view directories remain deployment responsibilities.
+
+### Final Phase 5 browser results
+
+- All ten existing Phase 1–4 regression groups passed in the combined browser run: search, authentication/applications/sharing, employer statuses, registration/recovery, mobile/errors, moderation, private reports/audit/suspension, accessibility settings, recommendations, and accommodation workflows/revocation.
+- The focused Phase 5 run then passed in Edge using temporary SQLite/profile and separate local ports: create/save, editor focus, repeated sections, reorder, saved HTML preview, 320px reflow, duplicate, explicit resume selection/consent, authorized employer preview and applicant revocation. No uncaught browser exceptions occurred. A synthetic editor screenshot was also visually inspected.
+- The combined run did not finish Phase 5 on its first attempt: the Windows headless browser did not deliver native keyboard events consistently. The harness now reports that limitation and checks the focused native reorder button's activation as a fallback. Separate early runs also exposed overly broad checkbox selectors and missing waits for asynchronous action controls; selectors and wait conditions were corrected. Chrome sometimes failed before loading any app page; the final focused run used Edge. No claim of a fully native keyboard-only browser pass is made.
+- Final Laravel verification after validation hardening: **84 passed, 892 assertions**. Frontend build/lint, PHP syntax/Pint, browser-script syntax and diff checks passed. PDF extraction/layout verification passed for both eight-page A4 templates. The non-blocking build chunk-size warning and manual accessibility/MySQL staging checks remain documented above.

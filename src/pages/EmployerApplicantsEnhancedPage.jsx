@@ -1,4 +1,5 @@
 import InterviewArrangements from "../components/InterviewArrangements.jsx";
+import ResumeSharing from "../components/ResumeSharing.jsx";
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
@@ -306,6 +307,7 @@ export default function EmployerApplicantsEnhancedPage() {
                       <p><Link to={`/reports?target_type=account&target_id=${applicant.accountId}`}>Report a problem with this hiring interaction</Link></p>
                       <p><Link to={`/employer/accommodation-requests?application_id=${applicant.id}`}>Review shared accommodation requests</Link></p>
                       <InterviewArrangements arrangements={applicant.confirmedArrangements} role="employer" />
+                      <ResumeSharing key={`${applicant.id}-${applicant.builtResumeShare?.shared_at || 'none'}`} applicationId={applicant.id} initialShare={applicant.builtResumeShare} />
                       <p>Skills: {applicant.skills.length ? applicant.skills.join(", ") : "Not provided"}</p>
                       <p className="whitespace-pre-wrap">Professional summary: {applicant.summary || "Not provided"}</p>
                       <p className="whitespace-pre-wrap">Cover letter: {applicant.coverLetter || "Not provided"}</p>

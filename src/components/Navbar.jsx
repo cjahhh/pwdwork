@@ -29,6 +29,7 @@ function Navbar() {
             { label: "Find Jobs", to: "/jobs" },
             { label: "Recommended Jobs", to: "/applicant/recommendations" },
             { label: "Profile", to: "/applicant/profile" },
+              { label: "Resumes", to: "/applicant/resumes" },
             { label: "Applications", to: "/applicant/applications" },
             { label: "Accommodation Requests", to: "/applicant/accommodation-requests" },
             { label: "Saved Jobs", to: "/applicant/saved-jobs" },

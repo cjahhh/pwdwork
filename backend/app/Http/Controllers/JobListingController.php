@@ -194,7 +194,7 @@ class JobListingController extends Controller
             'query' => ['nullable', 'string', 'max:255'],
         ]);
         $applications = Application::query()
-            ->with(['user.applicantProfile.accommodations', 'jobListing', ...Application::confirmedRequestRelations()])
+            ->with(['user.applicantProfile.accommodations', 'jobListing', ...Application::confirmedRequestRelations(), ...Application::resumeRelations()])
             ->whereHas('jobListing', fn ($query) => $query->where('employer_id', $request->user()->employer->id));
         if (! empty($filters['status'])) {
             $applications->where('status', $filters['status']);
@@ -236,13 +236,13 @@ class JobListingController extends Controller
             $record->update($data);
         }, 3);
 
-        return response()->json(['application' => $this->employerApplicationPayload($application->fresh(['user.applicantProfile.accommodations', 'jobListing', ...Application::confirmedRequestRelations()]))]);
+        return response()->json(['application' => $this->employerApplicationPayload($application->fresh(['user.applicantProfile.accommodations', 'jobListing', ...Application::confirmedRequestRelations(), ...Application::resumeRelations()]))]);
     }
 
     public function applicantApplications(Request $request): JsonResponse
     {
         $filters = $request->validate(['status' => ['sometimes', Rule::in(Application::STATUSES)], 'application_id' => ['sometimes', 'integer', 'min:1']]);
-        $applications = $request->user()->applications()->with(['jobListing.employer', ...Application::confirmedRequestRelations()]);
+        $applications = $request->user()->applications()->with(['jobListing.employer', ...Application::confirmedRequestRelations(), ...Application::resumeRelations()]);
         if (isset($filters['application_id'])) {
             $applications->whereKey($filters['application_id']);
         }
@@ -260,6 +260,7 @@ class JobListingController extends Controller
             'status' => $application->statusLabel(),
             'statusCode' => $application->status,
             'shareAccommodations' => $application->share_accommodations,
+            'builtResumeShare' => $application->resumeShareMetadata(),
             'interviewDate' => $application->interview_date?->toDateString(),
             'interviewTime' => $application->interview_time,
             'interviewNotes' => $application->interview_notes,
@@ -326,6 +327,7 @@ class JobListingController extends Controller
             'experience' => $profile?->experience ?? '', 'summary' => $profile?->summary ?? '',
             'coverLetter' => $application->cover_letter ?? '',
             'resumeAvailable' => $resumeAvailable,
+            'builtResumeShare' => $application->resumeShareMetadata(),
             'accommodationsShared' => $application->share_accommodations,
             // Only standardized support requests are shared, never arbitrary legacy labels.
             'accommodations' => $application->share_accommodations

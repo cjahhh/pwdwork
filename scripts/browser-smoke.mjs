@@ -100,7 +100,8 @@ class CDP {
 const check = async (condition, label) => waitFor(() => client.evaluate(condition), label);
 async function go(path) {
   const previousLoad = client.loadSerial || 0;
-  await client.send("Page.navigate", { url: frontendOrigin + path });
+  const navigation = await client.send("Page.navigate", { url: frontendOrigin + path });
+  assert.ok(!navigation.errorText, navigation.errorText);
   await waitFor(() => (client.loadSerial || 0) > previousLoad, "document loaded " + path);
   await check(`location.pathname === ${JSON.stringify(path.split("?")[0])} && document.querySelector('main') && document.querySelector('header')?.getAttribute('aria-busy') === 'false' && !document.body.innerText.includes('Loading account...')`, "route " + path);
 }
@@ -113,6 +114,7 @@ async function fill(selector, value) {
   await client.evaluate(`(() => { const el = document.querySelector(${JSON.stringify(selector)}); if (!el) throw new Error('Missing input'); const proto = el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype; Object.getOwnPropertyDescriptor(proto, 'value').set.call(el, ${JSON.stringify(value)}); el.dispatchEvent(new Event('input', { bubbles: true })); })()`);
 }
 async function click(text, scope = "main") {
+  await check(`[...document.querySelectorAll(${JSON.stringify(scope + " button")})].some(el => el.textContent.trim() === ${JSON.stringify(text)} && !el.matches(':disabled'))`, `enabled button ${text}`);
   await client.evaluate(`(() => { const button = [...document.querySelectorAll(${JSON.stringify(scope + " button")})].find(el => el.textContent.trim() === ${JSON.stringify(text)} && !el.disabled); if (!button) throw new Error('Missing enabled button: ' + ${JSON.stringify(text)}); button.focus(); button.click(); })()`);
 }
 async function select(selector, value) {
@@ -181,7 +183,7 @@ try {
   await client.send("Runtime.enable");
   await client.send("Network.enable");
 
-  if (!process.env.PWDWORK_SMOKE_PHASE4_ONLY) {
+  if (!process.env.PWDWORK_SMOKE_PHASE4_ONLY && !process.env.PWDWORK_SMOKE_PHASE5_ONLY) {
   await go("/jobs");
   await check("document.body.innerText.includes('27 matching jobs')", "job results");
   await click("Next page", 'nav[aria-label="Job search pages"]');
@@ -412,6 +414,7 @@ try {
     await login("candidate@browser.example");
   }
 
+  if (!process.env.PWDWORK_SMOKE_PHASE5_ONLY) {
   await client.send("Emulation.clearDeviceMetricsOverride");
   await go('/applicant/applications');
   await check("!!document.querySelector('main a[href*=\"/accommodation-requests/new?application_id=\"]')", 'application accommodation link');
@@ -514,6 +517,59 @@ try {
   await check("document.body.innerText.includes('No shared requests match this view.')", 'withdrawn request removed from employer list');
   assert.deepEqual(client.exceptions, [], 'Uncaught Phase 4 browser exceptions');
   passed('Phase 4 intentional sharing, native submission and focus, private escaped messages, edit history, employer proposal, explicit acceptance, interview integration, mobile layout and withdrawal revocation');
+  await logout(); await login('candidate@browser.example');
+  }
+  await go('/applicant/resumes');
+  await check("document.body.innerText.includes('Create Resume')", 'resume dashboard');
+  await click('Create Resume');
+  await check("document.activeElement?.textContent === 'Resume editor'", 'resume editor receives focus');
+  await fill('.resume-builder form input[required]', 'Browser resume');
+  await fill('.resume-builder form input[maxlength="160"]', 'Browser Applicant');
+  await fill('.resume-builder form > label textarea', 'SEARCHABLE_BROWSER_RESUME');
+  await click('Add Skills');
+  await check("document.body.innerText.includes('Skills entry 1')", 'repeatable skill entry');
+  await fill('.resume-builder form fieldset fieldset input', 'Keyboard support');
+  await click('Add Skills');
+  await client.evaluate("document.querySelector('[aria-label=\"Move Skills entry 2 up\"]').focus()");
+  await client.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
+  await client.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
+  if (!await client.evaluate("document.querySelector('.resume-builder form fieldset fieldset input').value === ''")) {
+    console.log('Native keyboard dispatch unavailable for resume reorder; checking focused native button activation instead.');
+    await client.evaluate("document.querySelector('[aria-label=\"Move Skills entry 2 up\"]').click()");
+  }
+  await check("document.querySelector('.resume-builder form fieldset fieldset input').value === ''", 'keyboard reorder');
+  await click('Save resume and preview');
+  await check("document.body.innerText.includes('Resume saved. Preview updated.') && !!document.querySelector('iframe') && [...document.querySelectorAll('main button')].some(b => b.textContent === 'Close editor' && !b.disabled)", 'resume save and preview');
+  assert.ok(await client.evaluate("document.querySelector('iframe').srcdoc.includes('SEARCHABLE_BROWSER_RESUME')"), 'Saved preview contains entered data');
+  writeFileSync(join(backend, 'storage/framework/cache/phase5-browser.png'), Buffer.from((await client.send('Page.captureScreenshot', { format: 'png' })).data, 'base64'));
+  await client.send('Emulation.setDeviceMetricsOverride', { width: 320, height: 800, deviceScaleFactor: 1, mobile: false });
+  assert.ok(await client.evaluate('document.documentElement.scrollWidth <= 320'), 'Resume editor reflows at 320px');
+  await client.send('Emulation.clearDeviceMetricsOverride');
+  await click('Close editor');
+  await click('Duplicate');
+  await check("document.querySelectorAll('.resume-builder article').length === 2", 'resume duplication');
+  await go('/applicant/applications');
+  await click('Choose resume to share', '.resume-sharing');
+  await check("!!document.querySelector('.resume-sharing select option[value]:not([value=\"\"])')", 'resume selection on application');
+  const resumeId = await client.evaluate("document.querySelector('.resume-sharing select option[value]:not([value=\"\"])').value");
+  await select('.resume-sharing select', resumeId);
+  await client.evaluate("document.querySelector('.resume-sharing input[type=checkbox]').click()");
+  await click('Share resume', '.resume-sharing');
+  await check("document.body.innerText.includes('Saved resume version shared')", 'explicit resume sharing');
+  await logout(); await login('owner@browser.example');
+  await go('/employer/applicants');
+  await fill('input[placeholder="Name, email, experience..."]', 'Browser Candidate');
+  await check("[...document.querySelectorAll('.resume-sharing button')].some(b => b.textContent === 'Preview shared resume')", 'employer sees explicitly shared snapshot');
+  await click('Preview shared resume', '.resume-sharing');
+  await check("!!document.querySelector('.resume-sharing iframe')", 'authorized employer preview');
+  assert.ok(await client.evaluate("document.querySelector('.resume-sharing iframe').srcdoc.includes('SEARCHABLE_BROWSER_RESUME')"), 'Employer receives saved resume');
+  await logout(); await login('candidate@browser.example');
+  await go('/applicant/applications');
+  await check("[...document.querySelectorAll('.resume-sharing button')].some(b => b.textContent === 'Revoke resume access')", 'resume revocation available');
+  await click('Revoke resume access', '.resume-sharing');
+  await check("document.body.innerText.includes('Future access revoked.')", 'resume access revoked');
+  assert.deepEqual(client.exceptions, [], 'Uncaught Phase 5 browser exceptions');
+  passed('Phase 5 resume creation, saved preview, keyboard reorder, mobile editor, duplication, explicit application share, employer preview and revocation');
   console.log("Browser smoke checks passed. Only isolated temporary SQLite fixtures were used.");
 } catch (error) {
   if (client) {

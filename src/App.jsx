@@ -25,6 +25,8 @@ import AdminAuditPage from "./pages/admin/AdminAuditPage.jsx";
 import ReportsPage from "./pages/ReportsPage.jsx";
 import NotificationsPage from "./pages/NotificationsPage.jsx";
 import NotFoundPage from "./pages/NotFoundPage.jsx";
+import { lazy, Suspense } from 'react';
+const ResumesPage = lazy(() => import('./pages/ResumesPage.jsx'));
 
 /**
  * App.jsx — route table for PWDWork.
@@ -53,6 +55,7 @@ function App() {
           }
         />
         <Route path="/applicant/recommendations" element={<ProtectedRoute allowedRoles={["applicant"]}><RecommendationsPage /></ProtectedRoute>} />
+        <Route path="/applicant/resumes" element={<ProtectedRoute allowedRoles={["applicant"]}><Suspense fallback={<p role="status">Loading resume builder…</p>}><ResumesPage /></Suspense></ProtectedRoute>} />
         <Route path="/applicant/accommodation-requests/:id?" element={<ProtectedRoute allowedRoles={["applicant"]}><AccommodationRequestsPage /></ProtectedRoute>} />
         <Route path="/applicant/profile" element={<ProtectedRoute allowedRoles={["applicant"]}><ApplicantProfilePage /></ProtectedRoute>} />
         <Route path="/applicant/applications" element={<ProtectedRoute allowedRoles={["applicant"]}><ApplicantApplicationsEnhancedPage /></ProtectedRoute>} />

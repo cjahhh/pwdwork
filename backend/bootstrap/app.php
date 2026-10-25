@@ -37,6 +37,28 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withExceptions(function (Exceptions $exceptions): void {
         // Private request errors must stay safe even when local debug mode is enabled.
         $exceptions->respond(function (Response $response, Throwable $exception, Request $request) {
+            if ($request->is('api/applicant/resumes', 'api/applicant/resumes/*', 'api/applications/*/built-resume', 'api/applications/*/built-resume/*') && $response->getStatusCode() >= 400) {
+                $status = $response->getStatusCode();
+                $payload = ['message' => match ($status) {
+                    401 => 'Unauthenticated.',
+                    403, 404 => 'Resume not found or you do not have permission to access it.',
+                    409 => 'This resume changed in another window. Reload before saving.',
+                    422 => 'Please check the resume information and try again.',
+                    429 => 'Too many attempts. Please wait before trying again.',
+                    default => 'Resumes are temporarily unavailable. Please try again later.',
+                }];
+                if ($exception instanceof ValidationException) {
+                    $payload['errors'] = $exception->errors();
+                }
+                $safe = response()->json($payload, $status)->header('Cache-Control', 'private, no-store');
+                foreach (['Retry-After', 'X-RateLimit-Limit', 'X-RateLimit-Remaining', 'X-RateLimit-Reset'] as $header) {
+                    if ($response->headers->has($header)) {
+                        $safe->headers->set($header, $response->headers->get($header));
+                    }
+                }
+
+                return $safe;
+            }
             if (! $request->is('api/accommodation-requests', 'api/accommodation-requests/*') || $response->getStatusCode() < 400) {
                 return $response;
             }

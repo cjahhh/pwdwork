@@ -1,0 +1,12 @@
+.resume-builder label, .resume-sharing label { display: block; margin: .75rem 0; }
+.resume-builder input, .resume-builder select, .resume-builder textarea, .resume-sharing select { display: block; width: 100%; padding: .65rem; border: 1px solid currentColor; border-radius: .3rem; background: inherit; color: inherit; font: inherit; }
+.resume-builder textarea { min-height: 7rem; }
+.resume-builder fieldset { border: 1px solid currentColor; padding: 1rem; margin: 1rem 0; min-width: 0; }
+.resume-builder legend { font-weight: bold; }
+.resume-builder button, .resume-sharing button { border: 1px solid currentColor; padding: .5rem .8rem; border-radius: .3rem; margin: .25rem; }
+.resume-builder button:disabled, .resume-sharing button:disabled { opacity: .65; }
+.resume-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
+.resume-preview { width: 100%; min-height: 48rem; border: 1px solid currentColor; background: white; }
+.resume-sharing { margin-block: 1rem; padding: 1rem; border: 1px solid currentColor; }
+.resume-error { border: 2px solid currentColor; padding: 1rem; }
+@media print { .resume-builder form, .resume-actions { display: none; } }

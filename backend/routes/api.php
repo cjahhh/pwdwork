@@ -9,7 +9,9 @@ use App\Http\Controllers\PasswordController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\RecommendationController;
 use App\Http\Controllers\ReportController;
+use App\Http\Controllers\ResumeController;
 use App\Http\Middleware\EnsureAccommodationRequestsReady;
+use App\Http\Middleware\EnsureResumesReady;
 use App\Http\Requests\RequestReviewRequest;
 use App\Models\JobListing;
 use App\Services\ModerationService;
@@ -30,6 +32,25 @@ Route::get('/jobs', [JobListingController::class, 'index']);
 Route::get('/jobs/{jobListing}', [JobListingController::class, 'show']);
 
 Route::middleware(['auth:sanctum', 'role:applicant,employer,admin'])->group(function () {
+    Route::middleware(EnsureResumesReady::class)->group(function () {
+        Route::prefix('applicant/resumes')->middleware(['role:applicant', 'throttle:60,1'])->controller(ResumeController::class)->group(function () {
+            Route::get('/', 'index');
+            Route::post('/', 'store');
+            Route::post('/import-profile', 'importProfile');
+            Route::get('/{id}', 'show')->whereNumber('id');
+            Route::put('/{id}', 'update')->whereNumber('id');
+            Route::delete('/{id}', 'destroy')->whereNumber('id');
+            Route::post('/{id}/duplicate', 'duplicate')->whereNumber('id');
+            Route::get('/{id}/preview', 'preview')->whereNumber('id');
+            Route::get('/{id}/pdf', 'pdf')->whereNumber('id')->middleware('throttle:10,1');
+        });
+        Route::prefix('applications/{id}/built-resume')->whereNumber('id')->middleware('role:applicant,employer')->controller(ResumeController::class)->group(function () {
+            Route::get('/', 'shared');
+            Route::get('/{format}', 'shared')->whereIn('format', ['preview', 'pdf'])->middleware('throttle:20,1');
+            Route::put('/', 'share')->middleware(['role:applicant', 'throttle:30,1']);
+            Route::delete('/', 'revoke')->middleware('role:applicant');
+        });
+    });
     Route::get('/notifications', [NotificationController::class, 'index']);
     Route::prefix('accommodation-requests')->middleware(['role:applicant,employer', EnsureAccommodationRequestsReady::class])->group(function () {
         Route::get('/catalog', [AccommodationRequestController::class, 'catalog']);

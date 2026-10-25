@@ -305,6 +305,7 @@ class PhaseFourTest extends TestCase
     public function test_existing_application_pages_remain_available_before_phase_four_migration(): void
     {
         Schema::partialMock()->shouldReceive('hasTable')->with('accommodation_requests')->andReturn(false);
+        Schema::shouldReceive('hasTable')->with('resume_application_shares')->andReturn(true);
         $this->getJson('/api/applicant/applications')->assertOk()->assertJsonPath('applications.0.confirmedArrangements', []);
         $this->getJson('/api/accommodation-requests')->assertStatus(503);
         Sanctum::actingAs($this->owner);

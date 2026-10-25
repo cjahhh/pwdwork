@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Facades\Schema;
 
 class Application extends Model
@@ -53,6 +54,25 @@ class Application extends Model
     public function confirmedAccommodationRequests(): HasMany
     {
         return $this->accommodationRequests()->where('status', 'agreed')->whereNull('withdrawn_at')->where('stage', 'interview');
+    }
+
+    public function builtResumeShare(): HasOne
+    {
+        return $this->hasOne(ResumeApplicationShare::class)->select(['id', 'application_id', 'title', 'version', 'shared_at', 'revoked_at']);
+    }
+
+    public static function resumeRelations(): array
+    {
+        return Schema::hasTable('resume_application_shares') ? ['builtResumeShare'] : [];
+    }
+
+    public function resumeShareMetadata(): ?array
+    {
+        if (! $this->relationLoaded('builtResumeShare') || ! $this->builtResumeShare || $this->builtResumeShare->revoked_at) {
+            return null;
+        }
+
+        return $this->builtResumeShare->only(['title', 'version', 'shared_at']);
     }
 
     public static function confirmedRequestRelations(): array

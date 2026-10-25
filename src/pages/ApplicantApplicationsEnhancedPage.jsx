@@ -1,4 +1,5 @@
 import InterviewArrangements from "../components/InterviewArrangements.jsx";
+import ResumeSharing from "../components/ResumeSharing.jsx";
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { fetchApplicantApplications, updateApplicationSharing } from "../services/jobs.js";
@@ -50,6 +51,7 @@ export default function ApplicantApplicationsPage() {
             {item.company} | Applied {item.appliedAt}
           </p>
           <p>Status: {item.status}</p>
+          <ResumeSharing key={`${item.applicationId}-${item.builtResumeShare?.shared_at || 'none'}`} applicationId={item.applicationId} initialShare={item.builtResumeShare} applicant />
           <p><Link to={`/applicant/accommodation-requests/new?application_id=${item.applicationId}&stage=${item.interviewDate ? "interview" : "recruitment"}`}>{item.interviewDate ? "Request interview accommodations" : "Request recruitment accommodations"}</Link>{" | "}<Link to={`/applicant/accommodation-requests?application_id=${item.applicationId}`}>Manage accommodation requests</Link></p>
           <p><Link to={`/reports?target_type=employer&target_id=${item.employerId}`}>Report a problem with this employer</Link></p>
           <label className="filter-option">
