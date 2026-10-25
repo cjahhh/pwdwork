@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { fetchAuditLogs } from "../../services/admin.js";
 import HistoryList from "../../components/HistoryList.jsx";
+import PageHeader from "../../components/PageHeader.jsx";
 
 export default function AdminAuditPage() {
   const [query, setQuery] = useState("");
@@ -9,8 +10,7 @@ export default function AdminAuditPage() {
   const [action, setAction] = useState("");
   const params = { query, ...(type ? { target_type: type } : {}), ...(actor ? { actor_id: actor } : {}), ...(action ? { action } : {}) };
   return <section>
-    <h1>Administrative audit logs</h1>
-    <p>Read-only history of decisions and review requests. Status changes and their audit records are committed together.</p>
+    <PageHeader title="Administrative audit logs" eyebrow="Decision history" icon="clock" description="Read-only history of decisions and review requests. Status changes and their audit records are committed together." />
     <div className="admin-filters panel">
       <label><span className="form-label">Search action, reason, or actor</span><input className="form-input" maxLength={255} value={query} onChange={(event) => setQuery(event.target.value)} /></label>
       <label><span className="form-label">Target type</span><select className="form-input" value={type} onChange={(event) => setType(event.target.value)}>

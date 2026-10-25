@@ -14,6 +14,8 @@ for template in ("classic", "modern"):
     for expected in ("Alex Example", "SEARCHABLE RESUME", "END ENTRY 12", "Communication", "English"):
         assert expected in text, (template, expected)
     assert "SECRET-ID" not in text and "PRIVATE-EXPERIENCE" not in text
+    assert "References" not in text, "Blank sections must be omitted"
+    assert "NA" in text, "Intentionally entered content must remain"
     for page in pdf.pages:
         assert abs(float(page.mediabox.width) - 595.28) < 1
         assert abs(float(page.mediabox.height) - 841.89) < 1

@@ -6,6 +6,7 @@ import { fetchOwnReports, submitReport, reportCategories, displayStatus } from "
 import { apiErrorMessage } from "../services/api.js";
 import RequestState from "../components/RequestState.jsx";
 import Pagination from "../components/Pagination.jsx";
+import PageHeader from "../components/PageHeader.jsx";
 
 export default function ReportsPage() {
   const { user } = useAuth();
@@ -29,8 +30,7 @@ export default function ReportsPage() {
     finally { setBusy(false); }
   }
   return <main className="page-shell">
-    <h1>Reports and support</h1>
-    <p>Report suspicious jobs, misleading accessibility claims, discrimination, or account/platform problems. Your report is private to you and authorized administrators.</p>
+    <PageHeader title="Reports and support" eyebrow="Help keep the platform trustworthy" icon="shield" description="Report suspicious jobs, misleading accessibility claims, discrimination, or account/platform problems. Your report is private to you and authorized administrators." />
     <form className="panel space-y-4" onSubmit={submit} aria-busy={busy}>
       <h2>Submit a report</h2>
       {error && <p role="alert">{error}</p>}<p role="status">{message}</p>

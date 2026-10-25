@@ -28,6 +28,13 @@
         <env name="DB_DATABASE" value=":memory:" force="true"/>
         <env name="DB_URL" value="" force="true"/>
         <env name="MAIL_MAILER" value="array" force="true"/>
+        <env name="PASSWORD_RESET_MAILER" value="array" force="true"/>
+        <env name="MAIL_URL" value="" force="true"/>
+        <env name="MAIL_USERNAME" value="synthetic-only" force="true"/>
+        <env name="MAIL_PASSWORD" value="synthetic-only" force="true"/>
+        <env name="BREVO_API_KEY" value="synthetic-only" force="true"/>
+        <env name="MAIL_FROM_ADDRESS" value="sender@example.test" force="true"/>
+        <env name="MAIL_FROM_NAME" value="PWDWork" force="true"/>
         <env name="ADMIN_NOTIFICATION_MAIL" value="false" force="true"/>
         <env name="QUEUE_CONNECTION" value="sync" force="true"/>
         <env name="SESSION_DRIVER" value="array" force="true"/>

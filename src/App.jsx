@@ -1,4 +1,4 @@
-import { Navigate, Routes, Route } from "react-router-dom";
+import { Routes, Route } from "react-router-dom";
 import Layout from "./components/Layout.jsx";
 import ProtectedRoute from "./components/ProtectedRoute.jsx";
 import RecommendationsPage from "./pages/RecommendationsPage.jsx";
@@ -27,6 +27,8 @@ const NotificationsPage = lazy(() => import("./pages/NotificationsPage.jsx"));
 const NotFoundPage = lazy(() => import("./pages/NotFoundPage.jsx"));
 import { lazy, Suspense } from 'react';
 const ResumesPage = lazy(() => import('./pages/ResumesPage.jsx'));
+const ApplicantDashboardPage = lazy(() => import('./pages/ApplicantDashboardPage.jsx'));
+const EmployerDashboardPage = lazy(() => import('./pages/EmployerDashboardPage.jsx'));
 
 /**
  * App.jsx — route table for PWDWork.
@@ -50,7 +52,7 @@ function App() {
           path="/applicant"
           element={
             <ProtectedRoute allowedRoles={["applicant"]}>
-              <Navigate to="/jobs" replace />
+              <ApplicantDashboardPage />
             </ProtectedRoute>
           }
         />
@@ -64,7 +66,7 @@ function App() {
           path="/employer"
           element={
             <ProtectedRoute allowedRoles={["employer"]}>
-              <Navigate to="/employer/listings" replace />
+              <EmployerDashboardPage />
             </ProtectedRoute>
           }
         />

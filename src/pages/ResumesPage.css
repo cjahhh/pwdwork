@@ -10,3 +10,19 @@
 .resume-sharing { margin-block: 1rem; padding: 1rem; border: 1px solid currentColor; }
 .resume-error { border: 2px solid currentColor; padding: 1rem; }
 @media print { .resume-builder form, .resume-actions { display: none; } }
+.resume-builder fieldset { border-color: var(--ui-line); border-radius: .75rem; }
+.resume-builder .resume-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr)); gap: .35rem 1rem; }
+.resume-builder .resume-fields legend { grid-column: 1 / -1; }
+.resume-builder .resume-section fieldset { background: var(--ui-subtle); }
+.resume-hint { color: var(--ui-muted); margin-bottom: .75rem; }
+.resume-sharing { border-color: var(--ui-line); border-radius: .8rem; background: var(--ui-subtle); }
+.resume-preview-panel { min-width: 0; padding-block: 1.25rem; }
+.resume-preview-panel p { margin-block: .75rem; color: var(--ui-muted); }
+.resume-preview-panel .resume-preview { min-height: 24rem; height: 55vh; max-height: 48rem; }
+.resume-preview-panel h2 { scroll-margin-top: 7rem; }
+.resume-workspace { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1.5rem; }
+@media (min-width: 80rem) {
+  .resume-builder { max-width: 90rem; width: 100%; }
+  .resume-workspace { grid-template-columns: minmax(0, 1fr) minmax(0, .9fr); align-items: start; }
+  .resume-preview-panel { position: sticky; top: 6rem; }
+}

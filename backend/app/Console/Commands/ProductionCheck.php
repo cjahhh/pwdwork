@@ -53,7 +53,11 @@ class ProductionCheck extends Command
         $check('Cache is shared; queue and recovery are asynchronous', in_array(config('cache.default'), ['database', 'redis'], true) && in_array(config('queue.default'), ['database', 'redis'], true) && in_array(config('queue.password_reset_connection'), ['database', 'redis'], true));
         $disk = config('filesystems.disks.'.config('filesystems.resume_disk'), []);
         $check('Resume storage is private with automatic serving disabled', in_array($disk['driver'] ?? null, ['local', 's3'], true) && ($disk['visibility'] ?? 'private') !== 'public' && ($disk['serve'] ?? false) === false && ! isset($disk['url']));
-        $check('Mail uses a delivery transport instead of log/array', in_array(config('mail.default'), ['smtp', 'ses', 'ses-v2', 'postmark', 'resend', 'mailgun', 'sendmail'], true));
+        $check('Mail uses a delivery transport instead of log/array', in_array(config('mail.default'), ['smtp', 'brevo', 'ses', 'ses-v2', 'postmark', 'resend', 'mailgun', 'sendmail'], true));
+        $resetMailer = config('mail.password_reset_mailer') ?: config('mail.default');
+        $resetTransport = config('mail.mailers.'.$resetMailer.'.transport');
+        $check('Password recovery uses SMTP or Brevo HTTPS, with no log fallback', in_array($resetTransport, ['smtp', 'brevo'], true));
+        $check('Brevo HTTPS has an API key when selected', ! in_array('brevo', [config('mail.default'), $resetTransport], true) || filled(config('services.brevo.key')));
         $check('Mail sender is configured and SMTP has a host', filter_var(config('mail.from.address'), FILTER_VALIDATE_EMAIL) !== false && filled(config('mail.from.name')) && (config('mail.default') !== 'smtp' || filled(config('mail.mailers.smtp.host'))));
         $check('Logs use daily/stderr and exclude debug verbosity', in_array(config('logging.default'), ['daily', 'stderr'], true) && in_array(config('logging.channels.'.config('logging.default').'.level'), ['info', 'notice', 'warning', 'error', 'critical', 'alert', 'emergency'], true));
         $check('Required runtime extensions are available', collect(['ctype', 'curl', 'dom', 'fileinfo', 'filter', 'hash', 'mbstring', 'openssl', 'pdo', 'pdo_mysql', 'session', 'tokenizer', 'xml'])->every(fn ($extension) => extension_loaded($extension)));

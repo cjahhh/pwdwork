@@ -1,6 +1,8 @@
 import { Link } from "react-router-dom";
 import { useResource } from "../hooks/useResource.js";
 import RequestState from "../components/RequestState.jsx";
+import PageHeader from "../components/PageHeader.jsx";
+import Icon from "../components/Icon.jsx";
 import { fetchOverview, fetchAdminEmployers, fetchAdminJobs, fetchAdminReports, fetchAuditLogs } from "../services/admin.js";
 
 const cards = [
@@ -21,13 +23,11 @@ export default function AdminDashboardPage() {
     return { stats, employers: employers.employers, jobs: jobs.jobs, reports: reports.reports, audit: audit.logs };
   });
   return <section>
-    <h1>Admin dashboard overview</h1>
-    <p>Review registrations, publication requests, and complaints. Counts include actual stored records; active jobs additionally require a verified, active employer.</p>
-    <button type="button" onClick={resource.reload} disabled={resource.loading}>Refresh overview</button>
+    <PageHeader title="Admin dashboard overview" eyebrow="Platform operations" icon="shield" description="Review registrations, publication requests and complaints. Active job counts require a verified, active employer." actions={<button className="button-secondary" type="button" onClick={resource.reload} disabled={resource.loading}>Refresh overview</button>} />
     <RequestState resource={resource} />
     {resource.data && <>
       <dl className="admin-stats">
-        {cards.map(([key, label]) => <div key={key} className="panel"><dt>{label}</dt><dd className="text-3xl font-black">{resource.data.stats[key]}</dd></div>)}
+        {cards.map(([key, label]) => <div key={key} className="panel"><span className="metric-icon"><Icon name={key.toLowerCase().includes('job') ? 'briefcase' : key.includes('pending') ? 'clock' : 'user'} /></span><dt>{label}</dt><dd className="admin-count">{resource.data.stats[key]}</dd></div>)}
       </dl>
       <div className="grid gap-5 md:grid-cols-2">
         {[

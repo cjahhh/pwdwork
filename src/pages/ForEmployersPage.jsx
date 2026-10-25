@@ -3,8 +3,8 @@ import ImpactStats from "../components/sections/ImpactStats.jsx";
 
 function ForEmployersPage() {
   return (
-    <main>
-      <section className="bg-gradient-to-b from-blue-50/60 via-white to-white py-16 border-b border-gray-200">
+    <main className="informational-page">
+      <section className="py-16">
         <div className="max-w-4xl mx-auto px-6 lg:px-12">
           <span className="inline-block bg-brand-teal-light border border-brand-teal/20 text-brand-teal px-4 py-2 rounded-full font-bold text-sm">
             Inclusive hiring with reviewed employer accounts

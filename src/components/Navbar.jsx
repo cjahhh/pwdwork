@@ -1,209 +1,47 @@
-import { apiErrorMessage } from "../services/api.js";
-import { useState } from "react";
-import { Link, NavLink, useNavigate } from "react-router-dom";
-import { useAuth } from "../context/AuthContext.jsx";
-import { useUi } from "../context/UiContext.jsx";
+import { useRef, useState } from 'react';
+import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext.jsx';
+import { useUi } from '../context/UiContext.jsx';
+import { apiErrorMessage } from '../services/api.js';
+import Icon from './Icon.jsx';
 
-const navLinkClass = ({ isActive }) =>
-  isActive
-    ? "text-brand-blue font-extrabold border-b-2 border-brand-blue pb-1"
-    : "hover:text-brand-blue transition pb-1";
-
-function Navbar() {
+const roleNames = { applicant: 'Jobseeker workspace', employer: 'Employer workspace', admin: 'Administration' };
+const roleLinks = {
+  applicant: [['Overview','/applicant','grid'],['Find Jobs','/jobs','search'],['Recommended Jobs','/applicant/recommendations','briefcase'],['Applications','/applicant/applications','file'],['Saved Jobs','/applicant/saved-jobs','heart'],['Resumes','/applicant/resumes','file'],['Accommodation Requests','/applicant/accommodation-requests','message'],['Profile','/applicant/profile','user']],
+  employer: [['Overview','/employer','grid'],['Job Listings','/employer/listings','briefcase'],['Applicants','/employer/applicants','user'],['Accommodation Requests','/employer/accommodation-requests','message'],['Company Profile','/employer/profile','shield']],
+  admin: [['Admin Dashboard','/admin','grid'],['Employer verification','/admin/employers','shield'],['Job moderation','/admin/jobs','briefcase'],['User management','/admin/users','user'],['Reports and complaints','/admin/reports','message'],['Audit logs','/admin/audit','clock']],
+};
+function Brand({ workspace = false }) {
+  return <Link to="/" className={`brand-lockup ${workspace ? 'brand-inverse' : ''}`} aria-label="PWDWork Homepage"><span className="brand-mark"><Icon name="briefcase" size={25} /><i /></span><span><strong>PWD<span>Work</span></strong><small>Inclusive jobs. Real possibility.</small></span></Link>;
+}
+export default function Navbar({ application = false }) {
   const [open, setOpen] = useState(false);
+  const toggle = useRef(null);
   const { user, ready, logout } = useAuth();
   const { showToast } = useUi();
   const navigate = useNavigate();
-  const navigation =
-    user?.role === "employer"
-      ? [
-          { label: "Company Profile", to: "/employer/profile" },
-          { label: "Job Listings", to: "/employer/listings" },
-          { label: "Applicants", to: "/employer/applicants" },
-            { label: "Accommodation Requests", to: "/employer/accommodation-requests" },
-          { label: "Reports", to: "/reports" },
-          { label: "Notifications", to: "/notifications" },
-        ]
-      : user?.role === "applicant"
-        ? [
-            { label: "Find Jobs", to: "/jobs" },
-            { label: "Recommended Jobs", to: "/applicant/recommendations" },
-            { label: "Profile", to: "/applicant/profile" },
-              { label: "Resumes", to: "/applicant/resumes" },
-            { label: "Applications", to: "/applicant/applications" },
-            { label: "Accommodation Requests", to: "/applicant/accommodation-requests" },
-            { label: "Saved Jobs", to: "/applicant/saved-jobs" },
-            { label: "Reports", to: "/reports" },
-            { label: "Notifications", to: "/notifications" },
-          ]
-        : user?.role === "admin" ? [
-            { label: "Admin Dashboard", to: "/admin" },
-            { label: "Notifications", to: "/notifications" },
-          ] : [
-            { label: "Home", to: "/", end: true },
-            { label: "Find Jobs", to: "/jobs" },
-            { label: "For Employers", to: "/employers" },
-            { label: "About", to: "/about" },
-          ];
-
+  const { pathname } = useLocation();
+  const dashboard = user?.role === 'admin' ? '/admin' : `/${user?.role}`;
+  const links = application ? [...(roleLinks[user?.role] || []), ...(user?.role !== 'admin' ? [['Reports','/reports','shield']] : []), ['Notifications','/notifications','bell']]
+    : [['Home','/','grid'],['Find Jobs','/jobs','search'],['For Employers','/employers','briefcase'],['About','/about','user']];
   async function onLogout() {
-    try {
-      await logout();
-    } catch (e) {
-      showToast("Logout failed", apiErrorMessage(e));
-      return;
-    }
-    setOpen(false);
-    showToast("Logged out", "Your session has ended.");
-    navigate("/");
+    try { await logout(); } catch (error) { showToast('Logout failed', apiErrorMessage(error)); return; }
+    setOpen(false); showToast('Logged out', 'Your session has ended.'); navigate('/');
   }
-
-  return (
-    <header aria-busy={!ready} className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-gray-200 shadow-sm">
-      <nav
-        className="max-w-[1440px] mx-auto px-6 lg:px-12 py-4 flex flex-wrap xl:flex-nowrap items-center justify-between gap-6"
-        aria-label="Main Navigation"
-      >
-        <Link
-          to="/"
-          className="flex flex-wrap items-center gap-3 group min-w-0 max-w-full"
-          aria-label="PWDWork Homepage"
-        >
-          <div className="w-12 h-12 rounded-2xl bg-brand-blue flex items-center justify-center text-white shadow-md group-hover:scale-105 transition-transform duration-200">
-            <svg
-              className="w-7 h-7 text-brand-yellow"
-              fill="currentColor"
-              viewBox="0 0 24 24"
-              aria-hidden="true"
-            >
-              <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
-            </svg>
-          </div>
-          <div className="min-w-0 max-w-full">
-            <span className="text-2xl font-black tracking-tight text-brand-blue block leading-none">
-              PWDWork
-            </span>
-            <span className="text-xs font-semibold text-brand-teal tracking-wide block mt-1">
-              Inclusive Jobs & Careers
-            </span>
-          </div>
-        </Link>
-
-        <ul
-          className="hidden xl:flex flex-1 flex-wrap justify-center items-center gap-x-4 gap-y-2 font-bold text-sm text-gray-700"
-          role="list"
-        >
-          {navigation.map((item) => (
-            <li key={item.to}>
-              <NavLink to={item.to} end={item.end} className={navLinkClass}>
-                {item.label}
-              </NavLink>
-            </li>
-          ))}
-        </ul>
-
-        <div className="flex items-center gap-3.5">
-          {user ? (
-            <>
-              <button
-                type="button"
-                onClick={onLogout}
-                className="hidden sm:block bg-brand-blue hover:bg-brand-blue-dark text-white font-extrabold text-base px-6 py-2.5 rounded-2xl shadow-soft-lg"
-              >
-                Log out
-              </button>
-            </>
-          ) : (
-            <>
-              <Link
-                to="/login"
-                className="hidden xl:inline-flex border-2 border-brand-blue text-brand-blue hover:bg-blue-50 font-extrabold text-base px-5 py-2.5 rounded-2xl transition duration-150"
-              >
-                Log In
-              </Link>
-              <Link
-                to="/register"
-                className="bg-brand-blue hover:bg-brand-blue-dark text-white font-extrabold text-base px-6 py-2.5 rounded-2xl shadow-soft-lg transition duration-150 hidden sm:flex items-center gap-2"
-              >
-                <span>Sign Up</span>
-                <svg
-                  className="w-4 h-4"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                  aria-hidden="true"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth="2.5"
-                    d="M14 5l7 7m0 0l-7 7m7-7H3"
-                  />
-                </svg>
-              </Link>
-            </>
-          )}
-          <button
-            type="button"
-            className="xl:hidden shrink-0 w-11 h-11 rounded-xl border-2 border-brand-blue text-brand-blue font-black"
-            aria-expanded={open}
-            aria-controls="mobile-nav"
-            onClick={() => setOpen((current) => !current)}
-          >
-            {open ? "✕" : "☰"}
-            <span className="sr-only">Toggle menu</span>
-          </button>
-        </div>
-      </nav>
-
-      {open ? (
-        <div
-          id="mobile-nav"
-          className="xl:hidden border-t border-gray-200 bg-white px-6 py-4 space-y-3"
-        >
-          {navigation.map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              end={item.end}
-              className="block font-bold text-brand-dark"
-              onClick={() => setOpen(false)}
-            >
-              {item.label}
-            </NavLink>
-          ))}
-          {user ? (
-            <>
-              <button
-                type="button"
-                className="block font-bold text-brand-dark"
-                onClick={onLogout}
-              >
-                Log out
-              </button>
-            </>
-          ) : (
-            <>
-              <NavLink
-                to="/login"
-                className="block font-bold text-brand-blue"
-                onClick={() => setOpen(false)}
-              >
-                Log In
-              </NavLink>
-              <NavLink
-                to="/register"
-                className="block font-bold text-brand-blue"
-                onClick={() => setOpen(false)}
-              >
-                Sign Up
-              </NavLink>
-            </>
-          )}
-        </div>
-      ) : null}
-    </header>
-  );
+  function closeMenu(to) {
+    setOpen(false);
+    if (to === pathname) requestAnimationFrame(() => toggle.current?.focus());
+  }
+  return <header className={application ? 'app-chrome' : 'public-header'} aria-busy={!ready} onKeyDown={event => { if (event.key === 'Escape' && open) { setOpen(false); toggle.current?.focus(); } }}>
+    {application && <div className="app-brand"><Brand workspace /><p>{roleNames[user?.role]}</p></div>}
+    <div className={application ? 'app-topbar' : 'public-topbar'}>
+      <div className={application ? 'mobile-brand' : ''}><Brand /></div>
+      {application && <div className="workspace-heading"><span className="workspace-indicator" /><span>{roleNames[user?.role]}</span></div>}
+      {!application && <nav className="public-desktop-links" aria-label="Main Navigation">{links.map(([label,to]) => <NavLink end={to === '/'} key={to} to={to}>{label}</NavLink>)}</nav>}
+      <div className="account-actions">{user ? <><span className="account-avatar" aria-hidden="true">{user.name.slice(0,1).toUpperCase()}</span><span className="account-name">{user.name}</span>{!application && <Link className="button-secondary" to={dashboard}>Workspace</Link>}<button type="button" className="logout-button" onClick={onLogout}>Log out</button></> : <><Link className="login-link" to="/login">Log In</Link><Link className="primary-button" to="/register">Get started <Icon name="arrow" size={16} /></Link></>}
+        <button ref={toggle} type="button" className="menu-toggle" aria-label="Toggle menu" aria-expanded={open} aria-controls="workspace-navigation" onClick={() => setOpen(value => !value)}><Icon name="menu" /></button>
+      </div>
+    </div>
+    <nav id="workspace-navigation" className={`${application ? 'app-sidebar' : 'public-mobile-links'} ${open ? 'menu-open' : ''}`} aria-label={application ? 'Main Navigation' : 'Mobile navigation'}><div className="sidebar-inner">{application && <p className="nav-section-label">Your workspace</p>}{links.map(([label,to,icon]) => <NavLink key={to} end={to === '/' || to === dashboard} to={to} onClick={() => closeMenu(to)}><Icon name={icon} size={19} /><span>{label}</span></NavLink>)}{application && <div className="sidebar-note"><Icon name="shield" /><p>Your information.<br /><strong>Your sharing choices.</strong></p></div>}</div></nav>
+  </header>;
 }
-
-export default Navbar;

@@ -1,0 +1,4 @@
+import Icon from './Icon.jsx';
+export default function AuthLayout({ children }) {
+  return <main className="auth-page"><div className="auth-layout"><section className="auth-story"><p className="eyebrow">Your potential. Your possibilities.</p><h2>Good work starts with an open door.</h2><p>A space to explore inclusive opportunities, showcase your strengths and connect with employers.</p><div className="auth-points">{[['search', 'Opportunities that fit your goals'], ['file', 'A resume built around your strengths'], ['message', 'Clear conversations about arrangements']].map(([icon, label]) => <div key={label}><Icon name={icon} /><p>{label}</p></div>)}</div><span className="auth-brand-note">PWDWork · Inclusive jobs & careers</span></section><div className="auth-content">{children}</div></div></main>;
+}

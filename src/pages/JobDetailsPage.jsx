@@ -50,7 +50,7 @@ function JobDetails({ id, user }) {
   }
   const job = resource.data;
   return (
-    <main className="page-shell">
+    <main className="page-shell job-details-page">
       <Link to="/jobs">Back to jobs</Link>
       <RequestState resource={resource} />
       {job && (
@@ -59,7 +59,7 @@ function JobDetails({ id, user }) {
           <p>
             {job.company} | {job.location} | {job.type} | {job.mode}
           </p>
-          <p>{job.description}</p>
+          <h2>About this role</h2><p className="whitespace-pre-wrap">{job.description}</p>
           {user && ["applicant", "employer"].includes(user.role) && <p>
             <Link to={`/reports?target_type=job&target_id=${job.id}`}>Report this listing</Link>{" | "}
             <Link to={`/reports?target_type=employer&target_id=${job.employerId}`}>Report this employer</Link>
@@ -71,7 +71,7 @@ function JobDetails({ id, user }) {
             requirements with the employer.
           </p>
           {job.accommodations.length ? (
-            <ul>
+            <ul className="support-list">
               {job.accommodations.map((item) => (
                 <li key={item.label}>{item.label}</li>
               ))}

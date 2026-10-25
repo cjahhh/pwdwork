@@ -1,162 +1,35 @@
-import RecommendationsPage from "./RecommendationsPage.jsx";
-import { useAuth } from "../context/AuthContext.jsx";
-import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
-import { fetchJobs } from "../services/jobs.js";
-import { useResource } from "../hooks/useResource.js";
-import RequestState from "../components/RequestState.jsx";
-import JobGrid from "../components/JobGrid.jsx";
+import { useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext.jsx';
+import { useResource } from '../hooks/useResource.js';
+import { fetchJobs } from '../services/jobs.js';
+import JobGrid from '../components/JobGrid.jsx';
+import RequestState from '../components/RequestState.jsx';
+import RecommendationsPage from './RecommendationsPage.jsx';
+import Icon from '../components/Icon.jsx';
 
-function HomePage() {
-  const navigate = useNavigate();
+export default function HomePage() {
   const { user } = useAuth();
-  const [query, setQuery] = useState("");
-  const [location, setLocation] = useState("");
-
-  const resource = useResource(() => fetchJobs({ per_page: 3 }));
-  const featuredJobs = resource.data?.jobs || [];
-
-  function clearFilters() {
-    setQuery("");
-    setLocation("");
-  }
-
-  function searchJobs(event) {
+  const navigate = useNavigate();
+  const [query, setQuery] = useState('');
+  const [location, setLocation] = useState('');
+  const resource = useResource(() => fetchJobs({ per_page: 3 }), 'featured');
+  function search(event) {
     event.preventDefault();
     const params = new URLSearchParams();
-    if (query) params.set("q", query);
-    if (location) params.set("location", location);
-    navigate(`/jobs?${params.toString()}`);
+    if (query.trim()) params.set('q', query.trim());
+    if (location.trim()) params.set('location', location.trim());
+    navigate(`/jobs?${params}`);
   }
-
-  return (
-    <main>
-      <section
-        id="hero"
-        className="relative bg-gradient-to-b from-blue-50/60 via-white to-gray-50 pt-10 pb-16 lg:pt-16 lg:pb-24 border-b border-gray-200"
-      >
-        <div className="max-w-[1440px] mx-auto px-6 lg:px-12">
-          <div className="max-w-4xl mx-auto">
-            <div className="space-y-6">
-              <p className="text-sm font-bold text-brand-teal">Accessible jobs from inclusive employers</p>
-
-              <h1 className="text-4xl sm:text-5xl lg:text-6xl font-black text-brand-dark tracking-tight leading-[1.15]">
-                Find work that <br className="hidden sm:inline" />
-                <span className="text-brand-blue underline decoration-brand-yellow decoration-wavy decoration-2">
-                  works for you.
-                </span>
-              </h1>
-
-              <p className="text-lg text-gray-700 leading-relaxed max-w-2xl">
-                Search available roles and choose the work arrangements and accommodations that fit you.
-              </p>
-
-              <form
-                onSubmit={searchJobs}
-                className="bg-white p-4 sm:p-5 rounded-2xl shadow-soft-xl border border-gray-200 space-y-4 sm:space-y-0 sm:flex sm:items-end sm:gap-4"
-              >
-                <div className="flex-1 relative">
-                  <label htmlFor="heroSearchInput" className="block text-xs font-extrabold uppercase tracking-wider text-brand-teal mb-1">
-                    Job Title or Skill
-                  </label>
-                  <div className="relative flex items-center">
-                    <svg className="w-5 h-5 text-gray-400 absolute left-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                    </svg>
-                    <input
-                      type="text"
-                      id="heroSearchInput"
-                      value={query}
-                      onChange={(event) => setQuery(event.target.value)}
-                      placeholder="e.g. Customer service, cashier..."
-                      className="w-full pl-10 pr-3 py-3 bg-gray-50 border-2 border-gray-200 rounded-xl font-medium text-base text-brand-dark focus:bg-white focus:border-brand-blue transition"
-                    />
-                  </div>
-                </div>
-
-                <div className="flex-1 relative">
-                  <label htmlFor="heroLocationInput" className="block text-xs font-extrabold uppercase tracking-wider text-brand-teal mb-1">
-                    Location Preference
-                  </label>
-                  <div className="relative flex items-center">
-                    <svg className="w-5 h-5 text-gray-400 absolute left-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                    </svg>
-                    <input
-                      type="text"
-                      id="heroLocationInput"
-                      value={location}
-                      onChange={(event) => setLocation(event.target.value)}
-                      placeholder="e.g. Remote, Manila, Hybrid..."
-                      className="w-full pl-10 pr-3 py-3 bg-gray-50 border-2 border-gray-200 rounded-xl font-medium text-base text-brand-dark focus:bg-white focus:border-brand-blue transition"
-                    />
-                  </div>
-                </div>
-
-                <button
-                  type="submit"
-                  className="w-full sm:w-auto bg-brand-teal hover:bg-brand-teal-hover text-white font-extrabold text-lg px-8 py-3.5 rounded-xl shadow-soft-lg transition flex items-center justify-center gap-2"
-                >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                  </svg>
-                  <span>Search Jobs</span>
-                </button>
-              </form>
-
-              <p className="text-sm text-gray-600">Try a search such as “Customer service” or “Warehouse”.</p>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {user?.role === "applicant" ? <RecommendationsPage key={user.id} preview /> : <section id="jobs-section" className="bg-brand-gray-bg py-12 border-b border-gray-200">
-        <div className="max-w-[1440px] mx-auto px-6 lg:px-12">
-          <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-7">
-            <div>
-              <h2 className="text-3xl font-black text-brand-dark tracking-tight">Featured jobs</h2>
-              <p className="text-gray-600 mt-1">Roles with clear accessibility information.</p>
-            </div>
-            <div className="bg-white px-4 py-2 rounded-xl border border-gray-200 shadow-sm text-sm font-bold text-brand-dark flex items-center gap-2">
-              <span className="w-2.5 h-2.5 rounded-full bg-brand-teal" />
-              <span>
-                Showing <strong className="text-brand-blue">{featuredJobs.length}</strong> featured roles
-              </span>
-            </div>
-          </div>
-
-          <RequestState resource={resource} />
-          {!resource.loading && !resource.error && <JobGrid
-            jobs={featuredJobs}
-            totalCount={resource.data?.meta.total || 0}
-            emptyAction={
-              <button
-                type="button"
-                onClick={clearFilters}
-                className="bg-brand-blue text-white font-extrabold px-6 py-3 rounded-xl hover:bg-brand-blue-dark transition"
-              >
-                Reset All Filters
-              </button>
-            }
-          />}
-
-          <div className="mt-8 text-center">
-            <Link
-              to="/jobs"
-              className="bg-white hover:bg-gray-50 text-brand-blue border-2 border-brand-blue font-black text-lg px-10 py-4 rounded-2xl shadow-soft-lg transition duration-200 inline-flex items-center gap-3"
-            >
-              <span>View All Job Listings</span>
-              <svg className="w-5 h-5 text-brand-blue" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M17 8l4 4m0 0l-4 4m4-4H3" />
-              </svg>
-            </Link>
-          </div>
-        </div>
-      </section>}
-
-    </main>
-  );
+  return <main className="home-page">
+    <section className="home-hero"><div className="hero-grid">
+      <div className="hero-copy"><p className="eyebrow">A world of work. Open to you.</p><h1>Find opportunities.<br /><span>Build your future.</span></h1><p>Discover inclusive employment opportunities, connect with employers, and take the next step in your career.</p><div className="action-row"><Link className="primary-button" to="/jobs">Explore opportunities <Icon name="arrow" /></Link><Link className="banner-link" to="/employers">Hiring? Start here</Link></div><p className="hero-note"><Icon name="shield" size={18} /> Your strengths come first. Sharing stays your choice.</p></div>
+      <div className="hero-path"><div className="path-heading"><span className="metric-icon"><Icon name="briefcase" /></span><div><p className="eyebrow">Your career, your way</p><h2>Make room for possibility.</h2></div></div>{[['search','Discover your next role','Explore jobs by skills, location and work arrangement.'],['file','Bring your strengths forward','Build a resume that tells your professional story.'],['message','Start a useful conversation','Discuss practical recruitment arrangements privately.']].map(([icon,title,description],i) => <div className="path-step" key={title}><span className="path-number">0{i + 1}</span><Icon name={icon} /><div><h3>{title}</h3><p>{description}</p></div></div>)}<p className="path-caption">A clearer path from possibility to opportunity.</p></div>
+      <form className="hero-search" onSubmit={search}><label htmlFor="heroSearchInput"><span>What do you want to do?</span><div><Icon name="search" /><input id="heroSearchInput" value={query} onChange={e => setQuery(e.target.value)} placeholder="Job title, keyword or skill" /></div></label><label htmlFor="heroLocationInput"><span>Where would you like to work?</span><div><Icon name="briefcase" /><input id="heroLocationInput" value={location} onChange={e => setLocation(e.target.value)} placeholder="City or location" /></div></label><button className="primary-button" type="submit">Search jobs <Icon name="arrow" /></button></form>
+    </div></section>
+    <section className="section-container"><div className="section-heading"><div><p className="eyebrow">Take your next step</p><h2>Opportunities worth exploring</h2><p>Explore current listings and employer-reported workplace support.</p></div><Link to="/jobs">View all jobs <Icon name="arrow" size={18} /></Link></div><RequestState resource={resource} />{resource.data && <JobGrid jobs={resource.data.jobs} totalCount={resource.data.meta.total} />}</section>
+    {user?.role === 'applicant' && <div className="home-recommendations"><RecommendationsPage preview /></div>}
+    <section className="how-section"><div className="section-container"><p className="eyebrow">Simple steps. Meaningful progress.</p><h2>A platform built around your next move</h2><div className="benefit-grid">{[['01','Start with your strengths','Create a profile that highlights your skills, experience and preferred work arrangements.'],['02','Find the right possibilities','Search current opportunities and review why a recommended role might be relevant.'],['03','Move forward with clarity','Track your applications, prepare your resume and discuss recruitment arrangements.']].map(([number,title,body]) => <div key={number}><span className="step-number">{number}</span><h3>{title}</h3><p>{body}</p></div>)}</div></div></section>
+    <section className="section-container"><div className="home-access"><span className="access-emblem"><Icon name="user" size={66} /></span><div><p className="eyebrow">Designed for different ways of working</p><h2>More control. Fewer barriers.</h2><p>Adjust text size, contrast, reading fonts and motion to suit you. Explore employer-reported support and choose what to share, when to share it.</p><Link to="/about">Learn how PWDWork works <Icon name="arrow" size={18} /></Link></div></div><div className="employer-banner"><div><p className="eyebrow">For thoughtful employers</p><h2>Great teams start with open possibilities.</h2><p>Describe your opportunities clearly and connect with people ready to contribute.</p></div><Link className="primary-button" to="/register?role=employer">Create an employer account <Icon name="arrow" /></Link></div></section>
+  </main>;
 }
-
-export default HomePage;

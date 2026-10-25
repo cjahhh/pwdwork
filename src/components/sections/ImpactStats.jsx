@@ -4,9 +4,8 @@ const features = [
   ['Discuss arrangements', 'Request practical recruitment or interview accommodations with separate sharing controls.'],
 ];
 export default function ImpactStats() {
-  return <section className="bg-brand-gray-bg py-12 border-b border-gray-200"><div className="max-w-6xl mx-auto px-6">
-    <h2 className="text-3xl font-black text-brand-dark mb-6">What you can do on PWDWork</h2>
-    <div className="grid md:grid-cols-3 gap-6">{features.map(([title, description]) => <article key={title} className="panel bg-white"><h3 className="text-xl font-bold">{title}</h3><p>{description}</p></article>)}</div>
-    <p className="mt-4 text-gray-700">Public impact statistics will be added only when supported by verified records and a clear reporting method.</p>
+  return <section className="capabilities-section"><div className="section-container">
+    <p className="eyebrow">Built for your next step</p><h2>What you can do on PWDWork</h2>
+    <div className="benefit-grid">{features.map(([title, description]) => <article key={title}><h3>{title}</h3><p>{description}</p></article>)}</div>
   </div></section>;
 }

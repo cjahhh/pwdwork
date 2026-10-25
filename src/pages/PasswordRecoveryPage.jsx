@@ -1,15 +1,21 @@
 import { useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import api, { apiErrorMessage, prepareCsrf } from "../services/api.js";
+import AuthLayout from "../components/AuthLayout.jsx";
 export default function PasswordRecoveryPage({ reset = false }) {
   const [params] = useSearchParams();
-  const [email, setEmail] = useState(params.get("email") || ""),
+  const { hash } = useLocation();
+  const navigate = useNavigate();
+  const fragment = new URLSearchParams(hash.slice(1));
+  const [email, setEmail] = useState(fragment.get("email") || params.get("email") || ""),
     [password, setPassword] = useState(""),
     [confirmation, setConfirmation] = useState(""),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
-    [message, setMessage] = useState("");
-  const token = params.get("token");
+    [message, setMessage] = useState(""),
+    [completed, setCompleted] = useState(false);
+  // New emails keep secrets in a fragment; existing query links still work.
+  const token = fragment.get("token") || params.get("token");
   async function submit(e) {
     e.preventDefault();
     setError("");
@@ -30,6 +36,10 @@ export default function PasswordRecoveryPage({ reset = false }) {
       setMessage(data.message);
       setPassword("");
       setConfirmation("");
+      if (reset) {
+        setCompleted(true);
+        navigate('/reset-password', { replace: true });
+      }
     } catch (e) {
       setError(apiErrorMessage(e));
     } finally {
@@ -37,7 +47,7 @@ export default function PasswordRecoveryPage({ reset = false }) {
     }
   }
   return (
-    <main className="page-shell">
+    <AuthLayout><div className="auth-card page-shell">
       <h1>{reset ? "Reset your password" : "Forgot password"}</h1>
       <form className="panel space-y-5" onSubmit={submit} aria-busy={busy}>
         <p>
@@ -50,8 +60,8 @@ export default function PasswordRecoveryPage({ reset = false }) {
             {error}
           </p>
         )}
-        <p role="status">{message}</p>
-        {reset && !token ? (
+        <p role="status">{reset && completed && token ? '' : message}</p>
+        {completed && !token ? <p>You can now sign in with your new password.</p> : reset && !token ? (
           <p role="alert">The reset token is missing. Request a new link.</p>
         ) : (
           <>
@@ -108,6 +118,6 @@ export default function PasswordRecoveryPage({ reset = false }) {
           <Link to="/forgot-password">Request a new link</Link>
         </p>
       </form>
-    </main>
+    </div></AuthLayout>
   );
 }

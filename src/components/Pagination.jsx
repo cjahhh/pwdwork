@@ -4,6 +4,7 @@ export default function Pagination({ resource, label = "Results pages", disabled
     <nav aria-label={label} className="flex flex-wrap items-center gap-4 my-5">
       <button
         type="button"
+        className="button-secondary"
         disabled={disabled || resource.loading || !meta || resource.page <= 1}
         onClick={() => resource.setPage(resource.page - 1)}
       >
@@ -16,6 +17,7 @@ export default function Pagination({ resource, label = "Results pages", disabled
       </p>
       <button
         type="button"
+        className="button-secondary"
         disabled={disabled || resource.loading || !meta || resource.page >= meta.last_page}
         onClick={() => resource.setPage(resource.page + 1)}
       >

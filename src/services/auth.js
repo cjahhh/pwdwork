@@ -1,9 +1,9 @@
 import api, { prepareCsrf } from "./api.js";
 
 export function dashboardPath(role) {
-  if (role === "employer") return "/employer/listings";
+  if (role === "employer") return "/employer";
   if (role === "admin") return "/admin";
-  return "/jobs";
+  return "/applicant";
 }
 
 export async function registerAccount(payload) {

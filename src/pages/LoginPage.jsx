@@ -4,6 +4,7 @@ import { useAuth } from "../context/AuthContext.jsx";
 import { useUi } from "../context/UiContext.jsx";
 import { apiErrorMessage } from "../services/api.js";
 import { dashboardPath } from "../services/auth.js";
+import AuthLayout from "../components/AuthLayout.jsx";
 
 function LoginPage() {
   const { login } = useAuth();
@@ -11,6 +12,7 @@ function LoginPage() {
   const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
@@ -31,9 +33,8 @@ function LoginPage() {
   }
 
   return (
-    <main className="bg-brand-gray-bg py-16">
-      <div className="max-w-lg mx-auto px-6">
-        <div className="bg-white rounded-3xl p-8 shadow-soft-xl border-2 border-brand-blue space-y-6">
+    <AuthLayout>
+        <div className="auth-card space-y-6">
           <div>
             <p className="text-xs text-brand-teal font-bold uppercase tracking-wider">PWDWork Account</p>
             <h1 className="text-3xl font-black text-brand-dark mt-1">Log In</h1>
@@ -67,15 +68,16 @@ function LoginPage() {
               <label htmlFor="login-password" className="block text-xs font-extrabold uppercase tracking-wider text-brand-teal mb-1">
                 Password
               </label>
-              <input
+              <div className="password-control"><input
                 id="login-password"
-                type="password"
+                type={showPassword ? 'text' : 'password'}
                 autoComplete="current-password"
                 required
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
                 className="w-full px-4 py-3 bg-gray-50 border-2 border-gray-200 rounded-xl font-medium text-brand-dark focus:bg-white focus:border-brand-blue"
               />
+              <button type="button" aria-controls="login-password" aria-pressed={showPassword} onClick={() => setShowPassword(value => !value)}>{showPassword ? 'Hide password' : 'Show password'}</button></div>
             </div>
             <button
               type="submit"
@@ -98,8 +100,7 @@ function LoginPage() {
             </p>
           </div>
         </div>
-      </div>
-    </main>
+    </AuthLayout>
   );
 }
 

@@ -1,5 +1,7 @@
 # PWDWork Phase 2 implementation report
 
+Latest implementation: the Modern Professional Navy + Teal + Mint redesign and final card-depth refinements are recorded in the final sections of this report. See also `PWDWORK_DESIGN_SYSTEM.md` and the latest section of `PWDWORK_FINAL_QA_REPORT.md`; earlier phase results below are historical.
+
 Date: October 24, 2026 (Asia/Shanghai).
 
 ## Outcome
@@ -456,3 +458,125 @@ A prior development-server rerun timed out during login; the final run intention
 Route-cache generation/list loading/cleanup passed with **71 cached routes**, using an isolated temporary cache file; the normal route cache was not modified. The initial Windows absolute temporary path was interpreted as relative by Laravel, so the successful verification used a project-relative cache path. No config cache containing local secrets was generated. Root/ backend production environment dotfiles are now ignored by Git, while safe example files and the existing deterministic test configuration remain available.
 
 Final readiness assessment remains conditional: the code/test baseline is ready for the next **private staging** preparation step, but **the existing PHP 8.2.12/runtime environment is not approved for public exposure**. No migrations, hosting, external infrastructure changes, deployment, purchase or push were performed. The file inventory also includes `.gitignore` changes protecting future environment files. Follow `PHASE6-DEPLOYMENT.md` for the separate approved environment, upgrade, backup/restore, policies and verification work.
+
+## Phase 6C — Final UI/UX polish and application finalization (25 October 2026)
+
+The existing platform was polished without changing its architecture, authentication, API authorization, matching formula, consent rules or MySQL records. No local `.env` secret was edited or printed; no migration, import, push, hosting connection/provisioning or deployment occurred. The full handover is `PWDWORK_FINAL_QA_REPORT.md`.
+
+### Delivered improvements
+
+- Centralized small UI tokens/styles for navy/teal/neutral themes, readable form labels, consistent unstyled controls, pagination actions, headings, panel spacing and accessible loading/error states. Removed contradictory obsolete root-font/focus declarations while preserving effective settings and focus behavior. Existing specialized Tailwind layouts and dark/high-contrast/reduced-motion/font/cursor systems remain.
+- Reusable status badges and helpful empty states now clarify application/request/notification/admin states, saved-job/resume availability and next actions. Application filters/refresh are grouped and interviews/arrangements emphasized without changing their values.
+- Corrected misleading builder-resume headings: unshared state is explicitly “Not currently shared”, active state identifies a versioned builder snapshot. Legacy files are labeled “Uploaded profile resume” and use a separate download name. No new employer data is fetched or exposed.
+- Improved the resume editor with grouped fields, desktop preview alongside editing, responsive stacking, preview focus navigation, proper initial loading/refresh/error recovery and last-page adjustment after deletion. Save feedback announces updated preview only after it loads. Import/delete use existing review dialogs, with explicit privacy/snapshot explanations. Deletion focus now waits for dialog cleanup; closing shared previews returns focus to their trigger.
+- Fixed verified resume rendering defects: completely empty or whitespace-only entries/sections no longer print headings. Explicitly entered “NA”, “0” and other content remain. The filter acts in the escaped view only; saved personal content and application snapshots are unchanged. Both templates remain single-column A4 searchable PDFs.
+- Clarified unreported employer support, preserved job-description paragraph breaks and grouped accommodation labels. Home reuses truthful feature explanations; About identifies the owner-supplied academic project context. Unsupported contacts/statistics/certifications were not reintroduced.
+- Fixed two issues found at 320px with doubled text: saved-job card/grid intrinsic width and employer applicant identity-row overflow. Both now wrap without removing content.
+
+### Files and scope
+
+New: `src/styles/ui.css`, `src/components/StatusBadge.jsx`, `src/components/EmptyState.jsx`, `backend/tests/Feature/PhaseSixCTest.php`, `eslint.config.js`, and `PWDWORK_FINAL_QA_REPORT.md`.
+
+Modified shared components: `JobCard.jsx`, `Pagination.jsx`, `RequestState.jsx`, `ResumeSharing.jsx`; frontend setup: `src/index.css`, `src/main.jsx`; pages: Home, About, JobDetails, Profile, ApplicantApplicationsEnhanced, ApplicantSavedJobs, EmployerApplicantsEnhanced, AccommodationRequests, Notifications, Resumes (JSX/CSS), and `admin/AdminQueuePage.jsx`. Modified PDF/testing/tooling files: `backend/resources/views/resumes/document.blade.php`, `backend/tests/resume-pdf-fixture.php`, `scripts/verify-resume-pdf.py`, `scripts/browser-smoke.mjs`, `package.json` and `package-lock.json`.
+
+Only development lint dependencies were added: supported ESLint 10, `@eslint/js` and `globals`. The existing Oxlint React-aware pass remains. No runtime UI library, paid service or Composer dependency was added. Initial ESLint 9 was replaced after its unsupported-version warning; the unused React plugin was removed. Existing unrouted prototype pages remain unremoved and outside the live route table. The only backend application change is view rendering, not controller/model/business logic. No migration or deployment infrastructure file was added.
+
+### Executed verification
+
+- **99 Laravel tests passed, 1,023 assertions**, freshly executed after current changes. All Phase 1–6A security/authorization tests remain, with a new both-template rendering test contributing 30 assertions.
+- React production build passed without a chunk-size warning: main JavaScript approximately **352.21 kB minified / 109.67 kB gzip**. Existing Oxlint and new `npm run lint:eslint` both passed without findings.
+- Laravel Pint full source check passed. PHP syntax passed for **100** source/config/test/migration files, excluding generated bootstrap cache. Browser-script syntax and Git whitespace checks passed.
+- The final full Edge workflow suite passed **all twelve Phase 1–6 groups against built production assets**, using temporary SQLite/browser fixtures. It exercised applicant registration/login/profile/search/recommendations/save/apply/status, employer verification/listing/applicant/interview management, admin moderation/reports/audit/suspension, actual local queued recovery mail, accommodation discussion/alternative/acceptance/withdrawal, and builder creation/import-cancel/preview/duplicate/delete/share/employer preview/revocation. Added assertions confirm correct active/unshared headings, deletion confirmation/focus and shared-preview focus return. No uncaught browser exceptions occurred.
+- Final UI matrix passed **340 checks**: 34 role-specific screen scenarios at 320, 375, 768, 1024 and 1440 CSS pixels with 100%/200% base text. Applicant/employer private request details are included. There was no overflow, unlabeled main form control, unexpected alert or uncaught exception. Six real preference-control checks passed for contrast, dark mode, reduced motion, reading font, large cursor and text size. Screenshots of representative mobile/desktop screens were visually reviewed.
+- Both synthetic **eight-page A4** PDFs passed pypdf/PyMuPDF extraction, final-content, text-bounds and no-raster checks. The new blank-reference omission and intentional “NA” retention checks passed. Fixtures and first-page images contain no actual user data and remain in ignored local cache paths.
+
+Initial failures were used to fix real defects: 200%-text saved-job/employer-card overflow and the delete-dialog focus race. The reset page's expected missing-token alert was correctly classified rather than hidden; the preference harness was adjusted for the existing On/Off button labels. Final assertion runs pass. Windows may briefly retain a synthetic browser-profile file handle; the harness reports that cleanup note separately from test failures.
+
+### Accessibility, deployment and handover limits
+
+Native headless keyboard dispatch remains unreliable on this Windows environment; the browser suite explicitly logs its focused native button/form fallback. Doubled CSS text/reflow checks are not certification of real browser-menu zoom behavior. Manual keyboard-only journeys, NVDA/JAWS/VoiceOver, actual 200–400% zoom/device testing and measured contrast review remain required. No WCAG certification or PDF/UA compliance is claimed. Font/script coverage, PDF tagging, real MySQL concurrency/DDL, production SMTP/TLS/storage, backup restoration and hostile-load testing require separate staging verification.
+
+The intended future target is now Render + Aiven MySQL. Existing `deploy` files are generic Nginx/PHP/worker templates, not a validated Render image. No Dockerfile, `.dockerignore` or Render blueprint currently exists. Render documents Docker for PHP and ephemeral filesystems/private disk limitations; Aiven needs its protected connection configuration and project CA/TLS verification. The final QA report links the primary documentation and lists these requirements. No service account or cloud resource was accessed.
+
+**Readiness:** the application UI and locally verified workflows are prepared for a controlled academic presentation using approved synthetic data. Public launch remains blocked by the unpatched local PHP 8.2.12, an unvalidated Render/container/storage/worker setup, real Aiven/TLS/SMTP configuration, approved support/privacy/terms/operator/retention decisions, and the manual operational/accessibility checks. Use a separate cloud database with owner-approved fictional data; do not copy local private records, import the old SQL dump or bypass the production seeder guard. See `PWDWORK_FINAL_QA_REPORT.md` for separate Ready / Needs owner configuration / Requires testing / Must fix classifications and the final checklist.
+
+## Modern Professional redesign — 25 October 2026
+
+### Audit and implemented design
+
+Implemented directly in the working React/Laravel repository. The earlier design mixed utility-styled white panels, dense top navigation, oversized pills and inconsistent public/management layouts. The root applicant/employer routes redirected to lists; unused dashboard components did not provide an actual account overview. This redesign establishes a navy/teal/mint product identity with semantic tokens, restrained shadows, consistent control boundaries, original SVG icons, readable headings and a gray-blue canvas.
+
+The public masthead now has a distinct briefcase brand, active navigation, account actions and a mobile disclosure. Authenticated role pages use a navy sidebar with labeled icons and teal active routes, plus a compact account header. At smaller widths the sidebar becomes an inline menu. Escape and same-route selection restore focus to the menu trigger. Existing skip links, route focus, announcements, safe logout and all routes are retained. The footer uses the navy design while preserving honest support/policy/accessibility information.
+
+The homepage was substantially rebuilt: a navy hero, mint headline, purposeful career-path visual, working keyword/location search, real current job cards, signed-in recommendations, neutral process/benefit sections, a mint accessibility section and employer registration CTA. There are no fabricated outcomes, partners, testimonials, business statistics or company logos. Informational and employer participation pages use the same visual language; the old “Learn About Accessibility Audits” link was replaced with an accurate description of the About destination.
+
+### Page changes
+
+| Area | Result |
+| --- | --- |
+| Job discovery | Responsive filter rail, structured search form, clear results region, rebuilt cards with real company text/initials, work/type chips and source-labeled support |
+| Job details | Teal title boundary, work-summary surface, clearer section separation, consistent save/apply/consent controls |
+| Applicant overview | Welcome banner, four real metric cards, recent applications, resume/profile guidance and request navigation |
+| Employer overview | Company welcome, real listing/application/open/interview-stage totals, recent applicants and verification guidance |
+| Recommendations | Mint match-score panel, readable explanations and preserved formula/save/apply behavior |
+| Applicant applications | Structured page header and cards, distinct interview/sharing surfaces, original status and consent behavior |
+| Saved jobs | New header/card system with existing remove and unavailable-listing behavior |
+| Profile | Professional/company field section, responsive field grid, skills/work preferences and a distinct optional private-preference fieldset |
+| Accommodation requests | Request summary accents, proposed/agreed sharing panels, sender-labeled discussion shapes and timeline-style private history |
+| Resume Builder | Branded dashboard, grouped editor surfaces, mint action areas, desktop saved-preview/export panel and stacked mobile layout |
+| Employer management | Consistent page canvas, typography, forms and card surfaces; existing listing moderation/availability, hiring and interview controls retained |
+| Administration | Shared role shell, new overview metric presentation and page headers for queues/audit; real records, review dialogs, filters and pagination retained |
+| Authentication | Navy explanatory panel, focused form card, visible role radios and named show/hide password controls for login/registration |
+| Notifications/reports | Read/unread card treatment, decorative status icon, consistent report header, persistent feedback and existing action spacing |
+
+### Real data and preserved boundaries
+
+`/applicant` and `/employer` now render real overview components and are the respective login/registration destinations; `/admin` remains the administrator destination. Each overview uses four existing role-authorized APIs and existing pagination totals. Interview-stage counts do not claim future scheduled appointments. Open listing counts do not imply approval or public availability. Partial failures display **Unavailable** and retain independently loaded metrics; refresh retries all four. No fabricated zero or analytics graph is used.
+
+Scoring, accommodation consent, employer isolation, applicant ownership, moderation, application statuses, notifications, snapshot sharing/revocation, Sanctum, CSRF, throttling, suspension controls and PDF endpoints are unchanged. No private information is cached in browser local storage. No backend API, model, migration or environment change was needed for this redesign. Prior Phase 6C PDF rendering fixes remain present and tested.
+
+### Implementation files
+
+New reusable files: `src/components/Icon.jsx`, `PageHeader.jsx`, `AuthLayout.jsx`, `WorkspaceOverview.jsx`, and `src/styles/modern.css`. New documentation: `PWDWORK_DESIGN_SYSTEM.md`.
+
+Shared/layout changes: `src/App.jsx`, `src/main.jsx`, `src/index.css`, `src/services/auth.js`, `src/components/Layout.jsx`, `Navbar.jsx`, `JobCard.jsx`, `JobGrid.jsx`, and the existing `sections/EmployerCta.jsx`, `HowItWorks.jsx`, `ImpactStats.jsx`.
+
+Updated pages: Home, FindJobs, JobDetails, About, ForEmployers, ApplicantDashboard, EmployerDashboard, AdminDashboard, Profile, Recommendations, ApplicantApplicationsEnhanced, ApplicantSavedJobs, AccommodationRequests, Resumes, EmployerListingsEnhanced, EmployerApplicantsEnhanced, Login, Register, PasswordRecovery, Notifications, Reports, `admin/AdminQueuePage` and `admin/AdminAuditPage`. Page-specific resume CSS and existing shared feedback/dialog/sharing components continue to cooperate with the new semantic styles. `scripts/browser-smoke.mjs` adds real dashboard checks, additional responsive scenarios, theme/contrast review, menu interaction and password visibility checks. The implementation and final QA reports are updated. Earlier uncommitted Phase 6C work is preserved.
+
+### Verification and limits
+
+Fresh Laravel execution passed **99 tests / 1,023 assertions**. The production React build, Oxlint, ESLint, Laravel Pint and PHP syntax checks (100 files) passed. Both Classic and Modern synthetic resume PDFs passed eight-page A4 searchable-text, content, margin and no-raster verification. A fresh full browser run passed **14 workflow groups**, adding public/mobile navigation and real overview totals, partial failure and retry to the previous 12 groups. The final matrix passed **380 responsive/text checks** across 38 role-specific scenarios, **60 light/dark/high-contrast checks**, and **6 preference checks**. See the latest section of `PWDWORK_FINAL_QA_REPORT.md` for evidence and limits.
+
+The new UI uses no extra dependencies, remote fonts, raster downloads or animation library. Route splitting remains; dashboard requests run on entry/refresh, not a polling loop. Semantic text colors are tested in light, dark and high contrast. Automated review still does not establish complete WCAG conformance, actual browser zoom behavior or PDF/UA tagging. Manual keyboard/screen-reader/physical-device acceptance and staging operational checks remain required.
+
+No `.env` credentials, existing MySQL records, cloud databases, service accounts or migrations were changed. Nothing was pushed, deployed or purchased. The existing public-launch blockers remain: local PHP 8.2.12, unvalidated deployment/storage/worker setup, real service/TLS/mail configuration and approved operator/support/privacy/terms/retention decisions. This redesign prepares the presentation; it does not bypass those requirements.
+
+## Final card design and visual depth — 25 October 2026
+
+Refined the existing navy/teal/mint system in response to flat Find Jobs cards. The page canvas is now `#EAF1F7`; elevated cards use `#CADAE5` boundaries, an 18px radius and two-level shadows, with separate dark/high-contrast/forced-colors treatment. `--ui-card-*` variables and the `.surface-card` primitive keep job cards, filter panels, recommendations, saved jobs, applications, employer management cards and dashboard metrics consistent without changing their page layouts.
+
+`JobCard.jsx` now groups the company/work labels and title into a tinted header, followed by stronger employer information, full description, a dedicated mint accommodation inset and a full-width teal details footer. Existing labels, authorized source data and routes remain. No logo was invented. Description clamping and the support section's automatic margin were removed; naturally sized rows prevent large artificial gaps. Footers and nested actions remain independently focusable. Saved-job status/removal actions are grouped within their surface, and recommendation details remain secondary to existing save/apply controls.
+
+Filters have elevated panels, stronger legends, consistent checkbox spacing, a selected tint and wrapping labels. Hover changes shadow/border rather than position or scale. Existing reduced-motion preferences suppress transitions; keyboard focus remains visible. Forced colors uses system-colored borders/actions and removes shadows.
+
+Files changed for this refinement: `src/components/JobCard.jsx`, `Icon.jsx`; `src/styles/modern.css`; `src/pages/ApplicantSavedJobsPage.jsx`, `RecommendationsPage.jsx`, `ApplicantApplicationsEnhancedPage.jsx`, `EmployerListingsEnhancedPage.jsx`, `EmployerApplicantsEnhancedPage.jsx`; `scripts/browser-smoke.mjs`; and the implementation, design-system and QA reports. No backend functionality, API, authentication, scoring, consent, moderation, private storage, dependency or environment file was changed.
+
+Fresh build, Oxlint, ESLint and all **99 Laravel tests / 1,023 assertions** passed. Browser layout review passed **380 responsive/text checks**, **60 theme checks**, **32 added long-content/reduced-motion/forced-colors/high-contrast boundary checks**, and **six preference checks**, with no unexpected alerts or uncaught exceptions. The existing browser workflow suite passed **14 groups**. Detailed results and artifact locations are recorded in the latest section of `PWDWORK_FINAL_QA_REPORT.md`. Before/after Find Jobs views were inspected in Edge. Tests use only isolated synthetic SQLite data; MySQL records and credentials remain untouched, and nothing was pushed or deployed.
+
+## Final card row/footer alignment — 25 October 2026
+
+Made the shared job grid stretch cards only within their own content-sized row, with `margin-top: auto` on the flex footer. No fixed heights, global equal-height rows, information clipping or color changes were added. Existing recommendation and saved-job controls render before the same footer through the shared card's content slot, so View Job Details stays at the bottom in those views as well as Find Jobs and Featured Jobs. All handlers, labels, API calls and matching behavior remain intact.
+
+The production build, ESLint and Oxlint passed. Fresh browser review passed 150 mixed-accommodation alignment combinations across five role/view scenarios, five widths, two text scales and three themes, plus the existing 380 responsive/text, 60 theme, 32 card and six preference checks. The latest section of `PWDWORK_FINAL_QA_REPORT.md` records workflow-suite results and synthetic screenshot/JSON evidence. No backend logic, MySQL, application environment configuration, dependency or existing data was changed. Nothing was committed, pushed or deployed.
+
+## Gmail SMTP and HTTPS password recovery — 25 October 2026
+
+Reused the existing Laravel 12.69.3 broker, reset tables/pages/APIs, 60-minute expiry, 60-second broker throttle, password rules, generic confirmation and session/token revocation. Added PWDWork HTML/plain-text mail, explicit password-reset mailer selection, Gmail SMTP scheme/required-TLS options, a dependency-free Brevo HTTPS transport, fragment-based reset links and successful-reset URL cleanup. Provider selection is manual and the token process is shared.
+
+Local delivery can explicitly use Laravel's existing deferred connection after the response without a separate queue worker. Inline/discarding connections and log/fallback mail transports fail safely; recovery exceptions drop private provider transcripts and messages. Password request/reset rates keep their 5/10-per-minute values in separate named IP buckets. Token validation/consumption is within a database transaction with a MySQL row lock, and resets never reactivate a suspended account or change its role. Origin-only referrers preserve Sanctum restoration while excluding URL secrets.
+
+Fresh verification passed **114 Laravel tests / 1,181 assertions**, including **15 recovery/email tests / 158 assertions**, and **14 full browser workflow groups**. The browser uses an isolated temporary SQLite database and a guarded in-memory/test-inbox mail capture instead of printing reset tokens to logs. It verifies worker-free delivery, email fragment navigation, completion/cleanup, replay rejection, token-free server logs, new-password login and existing role workflows. Build, ESLint, Oxlint, Pint and PHP syntax checks for 105 files passed.
+
+New implementation files are `backend/app/Services/PasswordRecoveryMail.php`, `app/Mail/PasswordResetEmail.php`, `app/Mail/Transport/BrevoTransport.php`, the HTML/plain-text reset views, the recovery feature test and the guarded browser router. Reset controller/job, provider/mail/service configuration, rate-limit declarations, `.env.example`, production checks, the React recovery page, the referrer policy and test harness were updated. No dependency, migration, real account/provider key or existing MySQL record was changed. Existing `.env` credentials were not read or edited; no real email was sent, and nothing was pushed or deployed.
+
+Exact private Gmail settings, the manual end-to-end inbox checklist, Render Free SMTP restrictions and explicit Brevo/worker choices are in `PWDWORK_PASSWORD_RECOVERY_REPORT.md`. Real sender/account verification, inbox delivery, TLS/CA connectivity and real MySQL concurrency require separate manual/staging testing. The current production checker intentionally retains its durable-queue and patched-runtime requirements.

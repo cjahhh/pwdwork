@@ -144,7 +144,7 @@ class PhaseOneTest extends TestCase
         (new SendPasswordResetLink($user->email))->handle();
         Notification::assertSentTo($user, ResetPassword::class, function ($notification) use ($user) {
             $mail = $notification->toMail($user);
-            $this->assertStringContainsString('/reset-password?token=', $mail->actionUrl);
+            $this->assertStringContainsString('/reset-password#token=', $mail->actionUrl);
 
             return true;
         });

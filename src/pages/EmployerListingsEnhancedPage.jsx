@@ -103,7 +103,7 @@ export default function EmployerListingsEnhancedPage() {
   }
 
   return (
-    <main className="bg-brand-gray-bg py-12">
+    <main className="management-page listings-page">
       <div className="max-w-5xl mx-auto px-6">
         <RequestState resource={resource} />
         {error && <p role="alert">{error}</p>}
@@ -285,7 +285,7 @@ export default function EmployerListingsEnhancedPage() {
           {visible.map((listing) => (
             <article
               key={listing.id}
-              className="bg-white rounded-2xl border border-gray-200 shadow-soft-lg p-5 sm:p-6"
+                className="surface-card bg-white rounded-2xl border border-gray-200 shadow-soft-lg p-5 sm:p-6"
             >
               <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
                 <div>

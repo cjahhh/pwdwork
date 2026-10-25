@@ -3,16 +3,16 @@
 @theme {
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
 
-  --color-brand-blue: #1e3a8a;
-  --color-brand-blue-dark: #172554;
+  --color-brand-blue: #142d4e;
+  --color-brand-blue-dark: #10243d;
   --color-brand-blue-light: #eff6ff;
-  --color-brand-teal: #0f766e;
-  --color-brand-teal-hover: #115e59;
-  --color-brand-teal-light: #f0fdf4;
-  --color-brand-yellow: #facc15;
+  --color-brand-teal: #167d8d;
+  --color-brand-teal-hover: #0f766e;
+  --color-brand-teal-light: #ddf3f1;
+  --color-brand-yellow: #f3b544;
   --color-brand-yellow-hover: #eab308;
-  --color-brand-dark: #111827;
-  --color-brand-gray-bg: #f3f4f6;
+  --color-brand-dark: #1b2b40;
+  --color-brand-gray-bg: #f4f7fb;
   --color-brand-card-border: #e5e7eb;
 
   --shadow-soft-lg: 0 10px 25px -5px rgba(30, 58, 138, 0.08),
@@ -20,10 +20,6 @@
   --shadow-soft-xl: 0 20px 30px -10px rgba(15, 118, 110, 0.12),
     0 10px 15px -5px rgba(0, 0, 0, 0.04);
   --shadow-glow-yellow: 0 0 20px rgba(250, 204, 21, 0.4);
-}
-
-html {
-  font-size: 18px;
 }
 
 body {
@@ -62,20 +58,6 @@ html.large-cursor input,
 html.large-cursor select,
 html.large-cursor textarea {
   cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 32 32'%3E%3Cpath d='M4 2l22 14-10 2 5 10-4 2-5-10-7 7z' fill='white' stroke='black' stroke-width='2'/%3E%3C/svg%3E"), auto !important;
-}
-
-html.font-size-large {
-  font-size: 20px;
-}
-
-html.font-size-xlarge {
-  font-size: 22px;
-}
-
-*:focus-visible {
-  outline: 4px solid #facc15 !important;
-  outline-offset: 3px !important;
-  border-radius: 6px !important;
 }
 
 @keyframes floatSlow {

@@ -166,7 +166,7 @@ export default function EmployerApplicantsEnhancedPage() {
     }
   }
   return (
-    <main className="bg-brand-gray-bg py-12 min-h-[60vh]">
+    <main className="management-page applicants-page min-h-[60vh]">
       <div className="max-w-5xl mx-auto px-6">
         <RequestState resource={resource} />
         {error && <p role="alert">{error}</p>}
@@ -283,17 +283,17 @@ export default function EmployerApplicantsEnhancedPage() {
             {visible.map((applicant) => (
               <article
                 key={applicant.id}
-                className="bg-white rounded-2xl border border-gray-200 shadow-soft-lg p-5 sm:p-6"
+                className="surface-card bg-white rounded-2xl border border-gray-200 shadow-soft-lg p-5 sm:p-6"
               >
                 <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-5">
-                  <div className="flex gap-4">
+                  <div className="flex flex-wrap sm:flex-nowrap gap-4 min-w-0">
                     <div className="w-12 h-12 shrink-0 rounded-full bg-brand-blue text-white flex items-center justify-center font-black">
                       {applicant.name
                         .split(" ")
                         .map((name) => name[0])
                         .join("")}
                     </div>
-                    <div>
+                    <div className="min-w-0 max-w-full">
                       <h2 className="text-lg font-black text-brand-dark">
                         {applicant.name}
                       </h2>
@@ -312,8 +312,8 @@ export default function EmployerApplicantsEnhancedPage() {
                       <p className="whitespace-pre-wrap">Professional summary: {applicant.summary || "Not provided"}</p>
                       <p className="whitespace-pre-wrap">Cover letter: {applicant.coverLetter || "Not provided"}</p>
                       {applicant.resumeAvailable ? (
-                        <button type="button" onClick={() => downloadResume(applicant.id)}>Download resume</button>
-                      ) : <p>Resume: Not provided</p>}
+                        <div className="sharing-summary"><h3>Uploaded profile resume</h3><p>This is the applicant's existing profile upload, separate from Resume Builder sharing.</p><button type="button" onClick={() => downloadResume(applicant.id)}>Download uploaded profile resume</button></div>
+                      ) : <p>Uploaded profile resume: Not provided</p>}
                       {applicant.accommodationsShared ? (
                         <p>Shared profile accommodation preferences: {applicant.accommodations.join(", ") || "None selected"}</p>
                       ) : <p>Profile accommodation preferences are private.</p>}

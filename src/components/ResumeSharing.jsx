@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import api, { apiErrorMessage } from '../services/api.js';
 import { downloadBuiltResume, resumePreview } from '../services/resumes.js';
 import '../pages/ResumesPage.css';
+import StatusBadge from './StatusBadge.jsx';
 
 export default function ResumeSharing({ applicationId, applicant = false, initialShare = null }) {
   const path = `/applications/${applicationId}/built-resume`;
@@ -17,12 +18,16 @@ export default function ResumeSharing({ applicationId, applicant = false, initia
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [preview, setPreview] = useState('');
+  const [loadingResumes, setLoadingResumes] = useState(false);
+  const previewButton = useRef(null);
+  const sharingHeading = useRef(null);
   useEffect(() => {
     if (!applicant || !choosing) return;
     let active = true;
+    void Promise.resolve().then(() => { if (active) setLoadingResumes(true); });
     api.get('/applicant/resumes', { params: { page } }).then(({ data }) => {
       if (active) { setResumes(data.resumes); setLastPage(data.meta.last_page); }
-    }).catch(e => { if (active) setError(apiErrorMessage(e)); });
+    }).catch(e => { if (active) setError(apiErrorMessage(e)); }).finally(() => { if (active) setLoadingResumes(false); });
     return () => { active = false; };
   }, [applicant, choosing, page]);
   async function action(kind) {
@@ -34,27 +39,31 @@ export default function ResumeSharing({ applicationId, applicant = false, initia
         setShare(data.share); setConsent(false); setPreview(''); setMessage('Saved resume version shared with this application.');
       } else if (kind === 'revoke') {
         await api.delete(path); setShare(null); setPreview(''); setMessage('Future access revoked. Downloaded copies cannot be revoked.');
+        requestAnimationFrame(() => sharingHeading.current?.focus());
       } else if (kind === 'preview') setPreview(await resumePreview(`${path}/preview`));
       else await downloadBuiltResume(`${path}/pdf`, `${share.title}-v${share.version}`);
     } catch (e) { setError(apiErrorMessage(e)); } finally { lock.current = false; setBusy(false); }
   }
-  return <section className="resume-sharing" aria-label="Resume sharing">
-    <h3>Resume shared with this application</h3>
+  return <section className="resume-sharing" aria-label="Resume sharing" aria-busy={busy || loadingResumes}>
+    <h3 ref={sharingHeading} tabIndex={-1}>{share ? 'Shared Resume Builder snapshot' : 'Resume Builder'}</h3>
+    <StatusBadge status={share ? 'shared' : 'neutral'}>{share ? 'Shared with this application' : 'Not currently shared'}</StatusBadge>
     {error && <p role="alert">{error}</p>}<p role="status">{message}</p>
     {share ? <><p>{share.title}, version {share.version}, shared {new Date(share.shared_at).toLocaleString()}</p>
-      <button disabled={busy} type="button" onClick={() => action('preview')}>Preview shared resume</button>{' '}
+      <button ref={previewButton} disabled={busy} type="button" onClick={() => action('preview')}>Preview shared resume</button>{' '}
       <button disabled={busy} type="button" onClick={() => action('download')}>Download shared PDF</button>{' '}
-      {applicant && <button disabled={busy} type="button" onClick={() => action('revoke')}>Revoke resume access</button>}</> : <p>No builder resume shared.</p>}
-    {applicant && <button type="button" disabled={busy} onClick={() => setChoosing(!choosing)}>{choosing ? 'Close resume selection' : 'Choose resume to share'}</button>}
+      {applicant && <button disabled={busy} type="button" onClick={() => action('revoke')}>Revoke resume access</button>}</> : <p>{applicant ? 'Choose a saved builder resume when you want to share it with this application.' : 'The applicant has not shared a builder resume, or has revoked access.'}</p>}
+    {applicant && <button type="button" disabled={busy} aria-expanded={choosing} onClick={() => setChoosing(!choosing)}>{choosing ? 'Close resume selection' : 'Choose resume to share'}</button>}
     {applicant && choosing && <form onSubmit={e => { e.preventDefault(); action('share'); }}>
       <p>Choose a saved resume to share. This creates a snapshot; later edits will not change it. Sharing again explicitly replaces the snapshot. Downloaded copies cannot be revoked. Accommodation consent is separate.</p>
-      <label>Saved resume<select required value={selected} onChange={e => { setSelected(e.target.value); setConsent(false); }} disabled={busy}>
+      {loadingResumes && <p role="status">Loading saved resumes…</p>}
+      {!loadingResumes && !resumes.length && !error && <p>No saved resumes on this page. Create one from My resumes, then return here to share it.</p>}
+      <label>Saved resume<select required value={selected} onChange={e => { setSelected(e.target.value); setConsent(false); }} disabled={busy || loadingResumes}>
         <option value="">Choose a resume</option>{resumes.map(r => <option key={r.id} value={r.id}>{r.title} (v{r.version})</option>)}
       </select></label>
       {lastPage > 1 && <div><button type="button" disabled={busy || page === 1} onClick={() => { setPage(page - 1); setSelected(''); }}>Previous resumes</button> Page {page} of {lastPage} <button type="button" disabled={busy || page === lastPage} onClick={() => { setPage(page + 1); setSelected(''); }}>Next resumes</button></div>}
       <label><input type="checkbox" required checked={consent} onChange={e => setConsent(e.target.checked)} disabled={busy} /> I agree to share this saved resume with the employer for this application.</label>
       <button type="submit" disabled={busy || !selected || !consent}>{share ? 'Replace shared snapshot' : 'Share resume'}</button>
     </form>}
-    {preview && <><button type="button" onClick={() => setPreview('')}>Close shared preview</button><iframe title="Shared resume preview" sandbox="" srcDoc={preview} className="resume-preview" /></>}
+    {preview && <><button type="button" onClick={() => { setPreview(''); previewButton.current?.focus(); }}>Close shared preview</button><iframe title="Shared resume preview" sandbox="" srcDoc={preview} className="resume-preview" /></>}
   </section>;
 }

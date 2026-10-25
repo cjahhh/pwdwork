@@ -12,6 +12,7 @@ import {
 import RequestState from '../components/RequestState.jsx';
 import Pagination from '../components/Pagination.jsx';
 import ReviewDialog from '../components/ReviewDialog.jsx';
+import StatusBadge from '../components/StatusBadge.jsx';
 
 const label = value => value.replaceAll('_', ' ').replace(/^./, c => c.toUpperCase());
 const dateLabel = value => value ? new Date(value).toLocaleString() : 'Not recorded';
@@ -48,7 +49,7 @@ export default function AccommodationRequestsPage() {
   const base = `/${user.role}/accommodation-requests`;
   if (id === 'new' && user.role !== 'applicant') return <Navigate to={base} replace />;
   return <main className="page-shell space-y-5">
-    <h1>Accommodation Requests</h1>
+    <div className="page-heading"><div><p className="eyebrow">Practical support. Private conversations.</p><h1>Accommodation Requests</h1><p className="page-description">Discuss recruitment arrangements with clear sharing choices and a private history.</p></div></div>
     <p>Coordinate practical recruitment and interview arrangements separately from hiring decisions. No medical diagnosis, certificate, or PWD ID is needed.</p>
     <p>Individual requests are shared only when you intentionally submit them. Profile preference sharing is a separate choice on each application.</p>
     {id && <Link to={base}>Back to accommodation requests</Link>}
@@ -72,9 +73,9 @@ function RequestList({ base, user }) {
     <button type="button" onClick={resource.reload} disabled={resource.loading}>Refresh requests</button>
     <RequestState resource={catalog} /><RequestState resource={resource} />
     {resource.data?.meta.total === 0 && <p>No shared requests match this view. Applicants can create an optional request from an existing application.</p>}
-    <div className="grid gap-5 md:grid-cols-2">{resource.data?.requests.map(record => <article className="panel space-y-2 break-words" key={record.id}>
+    <div className="grid gap-5 md:grid-cols-2">{resource.data?.requests.map(record => <article className="panel request-summary-card space-y-2 break-words" key={record.id}>
       <h2><Link to={`${base}/${record.id}`}>{record.jobTitle} — Request #{record.id}</Link></h2>
-      <p>{record.applicant} · {record.company}</p><p>Status: {label(record.status)}</p><p>Stage: {label(record.stage)}</p>
+      <p>{record.applicant} · {record.company}</p><p>Status: <StatusBadge status={record.status}>{label(record.status)}</StatusBadge></p><p>Stage: {label(record.stage)}</p>
       <p>Submitted: {dateLabel(record.createdAt)}</p>
       <Link to={`${base}/${record.id}`}>Review request and discussion</Link>
     </article>)}</div>
@@ -167,14 +168,14 @@ function RequestDetails({ id, base, applicant }) {
     <RequestState resource={resource} />
     {mutation.error && <p role="alert">{mutation.error}</p>}<p role="status">{message}</p>
     {record && <>
-      <article className="panel space-y-3 break-words">
+      <article className="panel request-summary-card space-y-3 break-words">
         <h2 ref={heading} tabIndex={-1}>{record.jobTitle} — Request #{record.id}</h2>
-        <p>{record.applicant} · {record.company}</p><p>Status: {label(record.status)} · Stage: {label(record.stage)}</p>
+        <p>{record.applicant} · {record.company}</p><p>Status: <StatusBadge status={record.status}>{label(record.status)}</StatusBadge> · Stage: {label(record.stage)}</p>
         <p>Shared: {dateLabel(record.sharedAt)} · Version {record.version}</p>
         <ul>{record.categories.map(category => <li key={category}>{category}</li>)}</ul>
         <p className="whitespace-pre-wrap">{record.details || 'No additional details provided.'}</p>
         <p>{record.interview.date ? `Current interview: ${record.interview.date} at ${record.interview.time} (${record.interview.timezone}).` : 'No interview is currently scheduled. Requests may be discussed before scheduling.'} {record.interview.notes}</p>
-        {record.arrangement && <p className="whitespace-pre-wrap">{record.status === 'agreed' ? 'Confirmed arrangement' : 'Proposed arrangement (not agreed until accepted)'}: {record.arrangement}</p>}
+        {record.arrangement && <div className="sharing-summary"><p className="whitespace-pre-wrap"><strong>{record.status === 'agreed' ? 'Confirmed arrangement' : 'Proposed arrangement (not agreed until accepted)'}</strong>: {record.arrangement}</p></div>}
         {record.scheduleChanged && <p role="status">The interview schedule differs from the schedule recorded for this request or agreement. Discuss and reconfirm arrangements; no request was deleted. Previously recorded interview: {record.arrangementInterview?.date || record.originalInterview?.date || 'not scheduled'} at {record.arrangementInterview?.time || record.originalInterview?.time || 'not scheduled'}.</p>}
         <p><Link to={applicant ? `/reports?target_type=employer&target_id=${record.employerId}` : '/reports'}>Report an accommodation-related problem</Link></p>
         <p><Link to={applicant ? '/applicant/applications' : '/employer/applicants'}>View applications and interview scheduling</Link></p>
@@ -223,10 +224,10 @@ function Discussion({ id, version }) {
   return <>
     <section className="panel space-y-3" aria-label="Request messages"><h2>Messages (newest first)</h2><RequestState resource={messages} />
       {messages.data?.meta.total === 0 && <p>No messages yet.</p>}
-      {messages.data?.messages.map(item => <article className="border-b pb-3 break-words" key={item.id}><p>{label(item.sender)} · <time dateTime={item.createdAt}>{dateLabel(item.createdAt)}</time></p><p className="whitespace-pre-wrap">{item.body}</p></article>)}
+      {messages.data?.messages.map(item => <article className="discussion-message break-words" data-sender={item.sender} key={item.id}><p>{label(item.sender)} · <time dateTime={item.createdAt}>{dateLabel(item.createdAt)}</time></p><p className="whitespace-pre-wrap">{item.body}</p></article>)}
       <Pagination resource={messages} label="Request message pages" />
     </section>
-    <section className="panel space-y-3" aria-label="Private request history"><h2>Request history (newest first)</h2><RequestState resource={events} />
+    <section className="panel request-history space-y-3" aria-label="Private request history"><h2>Request history (newest first)</h2><RequestState resource={events} />
       {events.data?.events.map(item => <article className="border-b pb-3 break-words" key={item.id}>
         <p>{label(item.actor)} · {label(item.action)} · Version {item.version} · <time dateTime={item.createdAt}>{dateLabel(item.createdAt)}</time></p>
         <p>{item.beforeStatus && `${label(item.beforeStatus)} → `}{label(item.status)}</p>

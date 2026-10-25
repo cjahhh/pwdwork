@@ -20,6 +20,8 @@ foreach (['classic', 'modern'] as $template) {
         'work' => array_map(fn ($n) => ['heading' => 'Support role '.$n, 'organization' => 'Example team', 'dates' => '2020–2026', 'details' => str_repeat('Accessible customer support, training and documentation. ', 20).' END ENTRY '.$n], range(1, 12)),
         'skills' => [['heading' => 'Communication'], ['heading' => str_repeat('LongSkill', 40)]],
         'languages' => [['heading' => 'English', 'organization' => 'Fluent']],
+        'certifications' => [['heading' => 'NA']],
+        'references' => [['heading' => '', 'details' => " \n\t "]],
     ]]);
     file_put_contents(storage_path('framework/cache/resume-'.$template.'.pdf'), $renderer->pdf($resume)->getContent());
 }

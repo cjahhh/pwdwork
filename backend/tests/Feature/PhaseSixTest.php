@@ -103,7 +103,7 @@ class PhaseSixTest extends TestCase
             'database.default' => 'mysql', 'database.connections.mysql.database' => 'separate_production', 'database.connections.mysql.username' => 'app_user', 'database.connections.mysql.password' => 'SECRET-TEST-ONLY',
             'cache.default' => 'database', 'queue.default' => 'database', 'queue.password_reset_connection' => 'database',
             'filesystems.resume_disk' => 'local', 'filesystems.disks.local.serve' => false,
-            'mail.default' => 'smtp', 'mail.mailers.smtp.host' => 'smtp.example.test', 'mail.from.address' => 'operator@example.test', 'mail.from.name' => 'Test operator',
+            'mail.default' => 'smtp', 'mail.password_reset_mailer' => 'smtp', 'mail.mailers.smtp.host' => 'smtp.example.test', 'mail.from.address' => 'operator@example.test', 'mail.from.name' => 'Test operator',
             'logging.default' => 'stderr', 'logging.channels.stderr.level' => 'warning']);
         DB::shouldReceive('connection')->never();
         try {

@@ -7,6 +7,9 @@ import Pagination from "../../components/Pagination.jsx";
 import AdminRecordReview from "../../components/admin/AdminRecordReview.jsx";
 import { fetchAdminEmployers, fetchAdminJobs, fetchAdminUsers, fetchAdminReports } from "../../services/admin.js";
 import { displayStatus, reportCategories } from "../../services/moderation.js";
+import StatusBadge from '../../components/StatusBadge.jsx';
+import EmptyState from '../../components/EmptyState.jsx';
+import PageHeader from '../../components/PageHeader.jsx';
 
 const sections = {
   employer: { title: "Employer verification", key: "employers", fetcher: fetchAdminEmployers, statuses: ["pending", "verified", "rejected"] },
@@ -27,7 +30,7 @@ export default function AdminQueuePage({ kind }) {
     setParams(next);
   }
   return <section>
-    <h1>{config.title}</h1>
+    <PageHeader title={config.title} eyebrow="Platform administration" icon={kind === 'job' ? 'briefcase' : kind === 'report' ? 'message' : 'shield'} description="Review records, apply filters and record decisions with a clear audit history." />
     <div className="admin-filters panel">
       <label><span className="form-label">Search {config.title.toLowerCase()}</span>
         <input className="form-input" maxLength={255} value={params.get("query") || ""} onChange={(event) => filter("query", event.target.value)} />
@@ -54,11 +57,11 @@ export default function AdminQueuePage({ kind }) {
       <button type="button" onClick={resource.reload} disabled={resource.loading}>Refresh records</button>
     </div>
     <RequestState resource={resource} />
-    {resource.data?.meta.total === 0 && <p>No records match these filters.</p>}
+    {resource.data?.meta.total === 0 && <EmptyState title="No records match these filters.">Clear a filter or search for another record.</EmptyState>}
     <div className="space-y-4">
       {resource.data?.[config.key].map((record) => <article key={record.id} className="panel">
         <h2>{record.companyName || record.title || record.name || `Report #${record.id}`} <span className="text-sm">#{record.id}</span></h2>
-        <p className="status-badge">{displayStatus(record.verificationStatus || record.moderationStatus || record.status)}</p>
+        <StatusBadge status={record.verificationStatus || record.moderationStatus || record.status}>{displayStatus(record.verificationStatus || record.moderationStatus || record.status)}</StatusBadge>
         {kind === "employer" && <p>{record.contactName} · {record.contactEmail} · Account {displayStatus(record.accountStatus)}</p>}
         {kind === "job" && <p>{record.employer.companyName} (Employer #{record.employer.id}) · {record.location} · Availability {displayStatus(record.availability)}</p>}
         {kind === "user" && <p>{record.email} · {record.role}</p>}

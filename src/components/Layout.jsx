@@ -10,8 +10,9 @@ import Modal from "./Modal.jsx";
 
 function Layout() {
   const { announcement } = useUi();
-  const { error, retry, notice } = useAuth();
+  const { user, error, retry, notice } = useAuth();
   const { pathname } = useLocation();
+  const application = Boolean(user && (/^\/(applicant|employer|admin)(\/|$)/.test(pathname) || ['/notifications', '/reports'].includes(pathname) || (user.role === 'applicant' && /^\/jobs(\/|$)/.test(pathname))));
   useEffect(() => {
     const target = document.getElementById("main-content");
     if (target) {
@@ -21,7 +22,7 @@ function Layout() {
   }, [pathname]);
 
   return (
-    <div className="min-h-screen flex flex-col bg-white text-brand-dark antialiased selection:bg-brand-yellow selection:text-brand-dark">
+    <div className={`product-root ${application ? 'workspace-mode' : 'public-mode'}`}>
       <div className="sr-only" aria-live="polite">
         {announcement}
       </div>
@@ -29,7 +30,8 @@ function Layout() {
         Skip to content
       </a>
       <AccessibilityBar />
-      <Navbar />
+      <Navbar application={application} />
+      <div className="workspace-body">
       {notice && (
         <p role="status" className="panel">
           {notice}
@@ -45,6 +47,7 @@ function Layout() {
         <Outlet />
       </div>
       <Footer />
+      </div>
       <Toast />
       <Modal />
     </div>

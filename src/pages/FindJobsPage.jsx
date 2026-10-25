@@ -5,6 +5,7 @@ import { usePaginatedResource } from "../hooks/usePaginatedResource.js";
 import Pagination from "../components/Pagination.jsx";
 import RequestState from "../components/RequestState.jsx";
 import JobGrid from "../components/JobGrid.jsx";
+import PageHeader from "../components/PageHeader.jsx";
 export default function FindJobsPage() {
   const [params, setParams] = useSearchParams();
   const selected = params.getAll("work"),
@@ -46,16 +47,12 @@ export default function FindJobsPage() {
     setParams(next);
   }
   return (
-    <main className="page-shell">
-      <h1>Find jobs</h1>
-      <p>
-        Combine work arrangements and employer-reported accommodations. Confirm
-        specific support with the employer.
-      </p>
+    <main className="page-shell discovery-page">
+      <PageHeader title="Find jobs" eyebrow="Find your next possibility" icon="search" description="Combine work arrangements and employer-reported accommodations. Confirm specific support with the employer." />
       <form
         key={params.get("q") + "|" + params.get("location")}
         onSubmit={search}
-        className="panel grid gap-4 sm:grid-cols-2"
+        className="panel job-search-form"
       >
         <label>
           <span className="form-label">Keyword or skill</span>
@@ -78,7 +75,7 @@ export default function FindJobsPage() {
           Reset all filters and search
         </button>
       </form>
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="discovery-layout"><aside className="discovery-filters" aria-label="Filter job results">
         <fieldset className="panel">
           <legend>Work arrangements</legend>
           <p>
@@ -113,7 +110,6 @@ export default function FindJobsPage() {
             </label>
           ))}
         </fieldset>
-      </div>
       <button
         type="button"
         onClick={() => {
@@ -125,14 +121,16 @@ export default function FindJobsPage() {
       >
         Clear selected filters
       </button>
+      </aside><section className="discovery-results" aria-label="Job search results">
       <RequestState resource={resource} />
       {resource.data && (
         <>
-          <p>{resource.data.meta.total} matching jobs</p>
+          <p className="results-count">{resource.data.meta.total} matching jobs</p>
           <JobGrid jobs={resource.data.jobs} totalCount={resource.data.meta.total} />
         </>
       )}
       <Pagination resource={resource} label="Job search pages" />
+      </section></div>
     </main>
   );
 }

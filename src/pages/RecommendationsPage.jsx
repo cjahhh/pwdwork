@@ -7,6 +7,7 @@ import { usePaginatedResource } from '../hooks/usePaginatedResource.js';
 import JobCard from '../components/JobCard.jsx';
 import Pagination from '../components/Pagination.jsx';
 import RequestState from '../components/RequestState.jsx';
+import PageHeader from '../components/PageHeader.jsx';
 
 export function RecommendationCard({ job }) {
   const [saved, setSaved] = useState(Boolean(job.saved));
@@ -22,26 +23,26 @@ export function RecommendationCard({ job }) {
     catch (e) { setError(apiErrorMessage(e)); }
     finally { saving.current = false; setBusy(false); }
   }
-  return <section className="panel space-y-4" aria-label={`${job.title} recommendation`}>
-    <JobCard job={job} />
+  return <section className="panel surface-card recommendation-card" aria-label={`${job.title} recommendation`}>
+    <JobCard job={job}><div className="recommendation-details space-y-4">
     <p>Work arrangement: {job.mode || 'Not reported'}</p>
-    <p className="font-bold">Fit &amp; Access Match: {job.match.score === null ? 'More profile information needed' : `${job.match.score}/100`}</p>
+    <p className="match-score">Fit &amp; Access Match: {job.match.score === null ? 'More profile information needed' : `${job.match.score}/100`}</p>
     <p>{job.match.confidence}</p>
-    <ul>{job.match.reasons.map(reason => <li key={reason}>{reason}</li>)}</ul>
+    <ul className="recommendation-reasons">{job.match.reasons.map(reason => <li key={reason}>{reason}</li>)}</ul>
     <details><summary>How this score is calculated</summary><p>{job.match.formula}</p></details>
     <button type="button" className="primary-button" aria-disabled={busy || saved} aria-busy={busy} onClick={save}>{busy ? 'Saving...' : saved ? 'Saved' : 'Save Job'}</button>
     <Link className="primary-button" to={`/jobs/${job.id}`}>Apply for Job</Link>
     <p role="status">{message}</p>{error && <p role="alert">{error}</p>}
+    </div></JobCard>
   </section>;
 }
 
 export default function RecommendationsPage({ preview = false }) {
   const { user } = useAuth();
   const resource = usePaginatedResource(getRecommendations, { per_page: preview ? 3 : 12 }, user.id);
-  const Heading = preview ? 'h2' : 'h1';
   const Container = preview ? 'section' : 'main';
   return <Container className="page-shell">
-    <Heading>{preview ? 'Recommended for You' : 'Recommended Jobs'}</Heading>
+    {preview ? <div className="section-heading"><div><p className="eyebrow">Explore what fits your goals</p><h2>Recommended for You</h2></div></div> : <PageHeader title="Recommended Jobs" eyebrow="Fit & Access Match" icon="briefcase" description="Understand what makes an opportunity relevant, then make your own choice." />}
     <p>Fit &amp; Access Match compares your stated preferences with job listings. Scores do not establish eligibility, hiring probability, or guaranteed accessibility. All available jobs remain open for you to explore.</p>
     <Link to="/applicant/profile">Update your optional matching preferences</Link>
     <RequestState resource={resource} />

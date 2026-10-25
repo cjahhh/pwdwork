@@ -6,6 +6,10 @@ import { fetchNotifications, readNotification } from "../services/moderation.js"
 import { apiErrorMessage } from "../services/api.js";
 import RequestState from "../components/RequestState.jsx";
 import Pagination from "../components/Pagination.jsx";
+import StatusBadge from '../components/StatusBadge.jsx';
+import EmptyState from '../components/EmptyState.jsx';
+import PageHeader from '../components/PageHeader.jsx';
+import Icon from '../components/Icon.jsx';
 
 export default function NotificationsPage() {
   const { user } = useAuth();
@@ -19,16 +23,17 @@ export default function NotificationsPage() {
     finally { setBusy(false); }
   }
   return <main className="page-shell">
-    <h1>Notifications</h1><button type="button" onClick={resource.reload} disabled={resource.loading}>Refresh notifications</button>
+    <PageHeader title="Notifications" eyebrow="Stay in the loop" icon="bell" description="Updates about your account and activity, in one place." actions={<button type="button" className="button-secondary" onClick={resource.reload} disabled={resource.loading}>Refresh notifications</button>} />
     <RequestState resource={resource} />{error && <p role="alert">{error}</p>}
-    {resource.data?.meta.total === 0 && <p>You have no notifications yet.</p>}
-    {resource.data?.notifications.map((notice) => <article key={notice.id} className="panel">
-      <h2>{notice.title}</h2><p className="whitespace-pre-wrap">{notice.body}</p><p>{notice.createdAt} · {notice.readAt ? "Read" : "Unread"}</p>
+    {resource.data?.meta.total === 0 && <EmptyState title="You have no notifications yet.">Updates about applications, accommodation requests and account reviews will appear here.</EmptyState>}
+    {resource.data?.notifications.map((notice) => <article key={notice.id} className={`panel notification-card ${notice.readAt ? '' : 'notification-unread'}`}>
+      <span className="metric-icon"><Icon name="bell" /></span><div>
+      <h2>{notice.title}</h2><p className="whitespace-pre-wrap">{notice.body}</p><p>{notice.createdAt} <StatusBadge status={notice.readAt ? 'read' : 'unread'}>{notice.readAt ? 'Read' : 'Unread'}</StatusBadge></p>
       <div className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-3">
         {notice.actionUrl?.startsWith("/") && !notice.actionUrl.startsWith("//") && <Link to={notice.actionUrl} className="underline">View related page</Link>}
         {!notice.readAt && <button type="button" onClick={() => read(notice.id)} disabled={busy}>Mark as read</button>}
       </div>
-    </article>)}
+    </div></article>)}
     <Pagination resource={resource} label="Notification pages" disabled={busy} />
   </main>;
 }

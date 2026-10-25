@@ -2,7 +2,7 @@
 // Requires installed dependencies, PHP, Node 24, and Chrome/Edge (or BROWSER_PATH).
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
-import { mkdtempSync, writeFileSync, existsSync, rmSync } from "node:fs";
+import { mkdtempSync, writeFileSync, readFileSync, existsSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve, join, dirname, basename } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -20,8 +20,10 @@ const env = { ...process.env, PWDWORK_BROWSER_TEST: "1", APP_ENV: "browser_test"
   TRUSTED_PROXIES: "", DB_CONNECTION: "sqlite", DB_DATABASE: database, DB_URL: "",
   SESSION_DRIVER: "database", SESSION_CONNECTION: "sqlite", SESSION_SECURE_COOKIE: "false",
   SESSION_DOMAIN: "null", CACHE_STORE: "database", DB_CACHE_CONNECTION: "sqlite",
-  QUEUE_CONNECTION: "database", DB_QUEUE_CONNECTION: "sqlite", PASSWORD_RESET_QUEUE_CONNECTION: "database",
-  PASSWORD_RESET_QUEUE: "password-resets", MAIL_MAILER: "log", MAIL_LOG_CHANNEL: "stderr", LOG_CHANNEL: "stderr", BCRYPT_ROUNDS: "4",
+  QUEUE_CONNECTION: "database", DB_QUEUE_CONNECTION: "sqlite", PASSWORD_RESET_QUEUE_CONNECTION: "deferred",
+  PASSWORD_RESET_QUEUE: "password-resets", MAIL_MAILER: "array", PASSWORD_RESET_MAILER: "array", LOG_CHANNEL: "stderr", BCRYPT_ROUNDS: "4",
+  MAIL_URL: "", MAIL_USERNAME: "synthetic-only", MAIL_PASSWORD: "synthetic-only", BREVO_API_KEY: "synthetic-only",
+  MAIL_FROM_ADDRESS: "sender@example.test", MAIL_FROM_NAME: "PWDWork",
   ADMIN_NOTIFICATION_MAIL: "false",
   APP_CONFIG_CACHE: join(temp, "config.php"), APP_ROUTES_CACHE: join(temp, "routes.php"),
 };
@@ -49,7 +51,7 @@ function launch(command, args, cwd = root, processEnv = env) {
   return child;
 }
 const delay = (ms) => new Promise((done) => setTimeout(done, ms));
-async function waitFor(check, label, timeout = 20000) {
+async function waitFor(check, label, timeout = 30000) {
   const start = Date.now();
   while (Date.now() - start < timeout) {
     try { if (await check()) return; } catch { /* Startup/navigation may be in progress. */ }
@@ -77,6 +79,9 @@ class CDP {
       }
       if (message.method === "Runtime.exceptionThrown") this.exceptions.push(message.params.exceptionDetails.text);
       if (message.method === "Page.loadEventFired") this.loadSerial = (this.loadSerial || 0) + 1;
+      if (message.method === 'Page.javascriptDialogOpening' && typeof this.dialogDecision === 'boolean') {
+        void this.send('Page.handleJavaScriptDialog', { accept: this.dialogDecision });
+      }
       if (message.method === "Network.responseReceived" && message.params.response.url.endsWith("/api/login") && message.params.response.status === 429) {
         const entry = Object.entries(message.params.response.headers).find(([name]) => name.toLowerCase() === "retry-after");
         this.loginRetrySeconds = Number(entry?.[1]) || 60;
@@ -90,7 +95,7 @@ class CDP {
       this.socket.send(JSON.stringify({ id, method, params }));
       setTimeout(() => {
         if (this.pending.delete(id)) reject(new Error(`CDP timeout: ${method}`));
-      }, 20000).unref();
+      }, 45000).unref();
     });
   }
   async evaluate(expression) {
@@ -101,11 +106,12 @@ class CDP {
 }
 const check = async (condition, label) => waitFor(() => client.evaluate(condition), label);
 async function go(path) {
+  const pathname = new URL(path, frontendOrigin).pathname;
   const previousLoad = client.loadSerial || 0;
   const navigation = await client.send("Page.navigate", { url: frontendOrigin + path });
   assert.ok(!navigation.errorText, navigation.errorText);
-  await waitFor(() => (client.loadSerial || 0) > previousLoad, "document loaded " + path);
-  await check(`location.pathname === ${JSON.stringify(path.split("?")[0])} && document.querySelector('main') && document.querySelector('header')?.getAttribute('aria-busy') === 'false' && !document.body.innerText.includes('Loading account...')`, "route " + path);
+  if (navigation.loaderId) await waitFor(() => (client.loadSerial || 0) > previousLoad, "document loaded " + pathname);
+  await check(`location.pathname === ${JSON.stringify(pathname)} && document.querySelector('main') && document.querySelector('header')?.getAttribute('aria-busy') === 'false' && !document.body.innerText.includes('Loading account...')`, "route " + pathname);
 }
 async function reload() {
   const previousLoad = client.loadSerial || 0;
@@ -159,13 +165,298 @@ async function logout() {
 }
 function passed(name) { console.log("PASS " + name); }
 
+async function verifyMobileMenu() {
+  await client.send('Emulation.setDeviceMetricsOverride', { width: 375, height: 950, deviceScaleFactor: 1, mobile: false });
+  await client.evaluate("document.querySelector('header button[aria-label=\"Toggle menu\"]').click()");
+  await check("document.querySelector('header button[aria-label=\"Toggle menu\"]').getAttribute('aria-expanded') === 'true' && getComputedStyle(document.getElementById('workspace-navigation')).display !== 'none'", 'Mobile navigation opens');
+  await client.evaluate("document.querySelector('#workspace-navigation a').focus(); document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))");
+  await check("document.querySelector('header button[aria-label=\"Toggle menu\"]').getAttribute('aria-expanded') === 'false' && document.activeElement?.getAttribute('aria-label') === 'Toggle menu'", 'Escape closes mobile navigation and returns focus');
+  await client.evaluate("document.querySelector('header button[aria-label=\"Toggle menu\"]').click(); document.querySelector('#workspace-navigation a[aria-current=page]').click()");
+  await check("document.querySelector('header button[aria-label=\"Toggle menu\"]').getAttribute('aria-expanded') === 'false' && document.activeElement?.getAttribute('aria-label') === 'Toggle menu'", 'Selecting the current mobile route closes navigation and retains focus');
+  assert.ok(await client.evaluate('document.documentElement.scrollWidth <= 375'), 'Opened/closed mobile navigation reflows');
+  await client.send('Emulation.clearDeviceMetricsOverride');
+}
+
+async function verifyOverview(employer = false) {
+  const base = employer ? '/employer' : '/applicant';
+  await go(base);
+  await verifyMobileMenu();
+  await check("document.querySelectorAll('.metric-card strong').length === 4 && ![...document.querySelectorAll('.metric-card strong')].some(el => el.textContent === '—')", 'overview data ready');
+  const paths = employer
+    ? ['/employer/jobs?per_page=3', '/employer/applications?per_page=3', '/employer/jobs?status=open&per_page=1', '/employer/applications?status=interview&per_page=1']
+    : ['/applicant/applications?per_page=3', '/applicant/saved-jobs?per_page=1', '/applicant/resumes?per_page=1', '/applicant/applications?status=interview&per_page=1'];
+  const expected = await client.evaluate(`Promise.all(${JSON.stringify(paths)}.map(async path => { const response = await fetch('/api' + path, { headers: { Accept: 'application/json' } }); if (!response.ok) throw new Error('Overview API unavailable'); return String((await response.json()).meta.total); }))`);
+  assert.deepEqual(await client.evaluate("[...document.querySelectorAll('.metric-card strong')].map(el => el.textContent)"), expected, 'Overview counts match authorized API totals');
+  assert.ok(await client.evaluate("document.querySelectorAll('.activity-row').length > 0 && [...document.querySelectorAll('.activity-row h3')].every(el => el.textContent.trim().length > 0)"), 'Overview shows real recent job titles');
+  await client.send('Network.setBlockedURLs', { urls: ['*status=interview*'] });
+  await click('Refresh overview');
+  await check("[...document.querySelectorAll('.metric-card strong')].some(el => el.textContent === 'Unavailable')", 'Failed metric is unavailable, not a fabricated zero');
+  assert.deepEqual(await client.evaluate("[...document.querySelectorAll('.metric-card strong')].slice(0,3).map(el => el.textContent)"), expected.slice(0,3), 'Other metrics survive a partial API failure');
+  await client.send('Network.setBlockedURLs', { urls: [] });
+  await click('Refresh overview');
+  await check("[...document.querySelectorAll('.metric-card strong')].map(el => el.textContent).join('|') === " + JSON.stringify(expected.join('|')), 'Metric retry restores real totals');
+}
+
+async function reviewJobCards(label, authenticated) {
+  const context = authenticated ? 'applicant' : 'public';
+  const checks = [];
+  const normalMedia = [{ name: 'prefers-color-scheme', value: 'light' }, { name: 'prefers-reduced-motion', value: 'no-preference' }];
+  const reduced = await client.evaluate("document.documentElement.classList.contains('reduced-motion')");
+  await client.evaluate("document.documentElement.classList.remove('reduced-motion')");
+  await client.send('Emulation.setEmulatedMedia', { features: normalMedia });
+  await client.send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 950, deviceScaleFactor: 1, mobile: false });
+  const apiCard = await client.evaluate("fetch('/api/jobs?per_page=12', { headers: { Accept: 'application/json' } }).then(r => r.json()).then(data => ({ description: data.jobs[0].description, accommodations: data.jobs[0].accommodations.map(item => item.label) }))");
+  assert.deepEqual(await client.evaluate("({ description: document.querySelector('.job-description').textContent, accommodations: [...document.querySelectorAll('.job-card:first-child .job-support li')].map(el => el.textContent) })"), apiCard, 'Cards preserve the API description and every accommodation');
+  await client.evaluate("document.getElementById('main-content').focus({ preventScroll: true }); document.querySelector('.job-card').scrollIntoView({ block: 'center' })");
+  await client.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 1, y: 1 });
+  const restingShadow = await client.evaluate("getComputedStyle(document.querySelector('.job-card')).boxShadow");
+  assert.notEqual(restingShadow, 'none', 'Cards have resting elevation');
+  writeFileSync(join(backend, `storage/framework/cache/ui-${label}-${context}-job-cards.png`), Buffer.from((await client.send('Page.captureScreenshot', { format: 'png' })).data, 'base64'));
+  const point = await client.evaluate("(() => { const rect = document.querySelector('.job-card').getBoundingClientRect(); return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 }; })()");
+  await client.send('Input.dispatchMouseEvent', { type: 'mouseMoved', ...point });
+  await check("getComputedStyle(document.querySelector('.job-card')).boxShadow !== " + JSON.stringify(restingShadow), 'Pointer hover strengthens card elevation');
+  await client.evaluate("document.querySelector('.job-details-action').focus({ preventScroll: true })");
+  await client.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9 });
+  await client.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9 });
+  await client.evaluate("document.querySelector('.job-details-action').focus({ preventScroll: true })");
+  let forcedFocusNode;
+  if (!await client.evaluate("document.querySelector('.job-details-action').matches(':focus-visible')")) {
+    console.log('Inspecting forced focus-visible styling; native Windows keyboard dispatch is unavailable.');
+    await client.send('DOM.enable'); await client.send('CSS.enable');
+    const { root: documentRoot } = await client.send('DOM.getDocument');
+    const { nodeId } = await client.send('DOM.querySelector', { nodeId: documentRoot.nodeId, selector: '.job-details-action' });
+    forcedFocusNode = nodeId;
+    await client.send('CSS.forcePseudoState', { nodeId, forcedPseudoClasses: ['focus-visible'] });
+  }
+  assert.ok(await client.evaluate("(() => { const link=document.querySelector('.job-details-action'), style=getComputedStyle(link); return document.activeElement === link && parseFloat(style.outlineWidth) >= 3 && style.outlineStyle !== 'none'; })()"), 'Details action retains visible focus and a real focus destination');
+  writeFileSync(join(backend, `storage/framework/cache/ui-${label}-${context}-job-focus.png`), Buffer.from((await client.send('Page.captureScreenshot', { format: 'png' })).data, 'base64'));
+  if (forcedFocusNode) await client.send('CSS.forcePseudoState', { nodeId: forcedFocusNode, forcedPseudoClasses: [] });
+  await client.evaluate("document.documentElement.classList.add('high-contrast'); document.activeElement?.blur()");
+  for (const state of ['resting', 'hover-and-focus']) {
+    if (state === 'resting') await client.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 1, y: 1 });
+    else {
+      await client.send('Input.dispatchMouseEvent', { type: 'mouseMoved', ...point });
+      await client.evaluate("document.querySelector('.job-details-action').focus({ preventScroll: true })");
+    }
+    await check("(() => { const style=getComputedStyle(document.querySelector('.job-card')), action=getComputedStyle(document.querySelector('.job-details-action')); return ['Top','Right','Bottom','Left'].every(side => style['border' + side + 'Color'] !== style.backgroundColor && parseFloat(style['border' + side + 'Width']) >= 1) && action.borderTopColor !== action.backgroundColor; })()", 'High contrast keeps every card edge and the action boundary visible at rest, hover and focus');
+    checks.push({ context, mode: 'high-contrast-boundary', state, passed: true });
+  }
+  await client.evaluate("document.documentElement.classList.remove('high-contrast')");
+  for (const system of [false, true]) {
+    await client.evaluate(`document.documentElement.classList.toggle('reduced-motion', ${!system})`);
+    await client.send('Emulation.setEmulatedMedia', { features: [...normalMedia.filter(item => item.name !== 'prefers-reduced-motion'), { name: 'prefers-reduced-motion', value: system ? 'reduce' : 'no-preference' }] });
+    assert.ok(await client.evaluate("(() => { const style=getComputedStyle(document.querySelector('.job-card')); return style.transform === 'none' && style.transitionDuration.split(',').every(value => parseFloat(value) <= .01); })()"), 'System and saved reduced-motion preferences suppress transitions');
+    checks.push({ context, mode: system ? 'system-reduced-motion' : 'saved-reduced-motion', passed: true });
+  }
+  await client.evaluate("document.documentElement.classList.remove('reduced-motion')");
+  for (const width of [375,1440]) {
+    await client.send('Emulation.setDeviceMetricsOverride', { width, height: 950, deviceScaleFactor: 1, mobile: false });
+    await client.send('Emulation.setEmulatedMedia', { features: [...normalMedia, { name: 'forced-colors', value: 'active' }] });
+    assert.ok(await client.evaluate(`(() => { const style=getComputedStyle(document.querySelector('.job-card')); return matchMedia('(forced-colors: active)').matches && style.boxShadow === 'none' && parseFloat(style.borderWidth) >= 1 && style.borderStyle === 'solid' && document.documentElement.scrollWidth <= ${width}; })()`), 'Forced colors retains visible borders without shadows or overflow');
+    checks.push({ context, mode: 'forced-colors', width, passed: true });
+  }
+  writeFileSync(join(backend, `storage/framework/cache/ui-${label}-${context}-job-forced-colors.png`), Buffer.from((await client.send('Page.captureScreenshot', { format: 'png' })).data, 'base64'));
+  await client.send('Emulation.setEmulatedMedia', { features: normalMedia });
+  const original = await client.evaluate("({ description: document.querySelector('.job-description').textContent, support: document.querySelector('.job-support li').textContent })");
+  await client.evaluate("document.querySelector('.job-description').textContent = 'Synthetic long description. '.repeat(40) + 'LONG_UNBROKEN_CONTENT_'.repeat(6); document.querySelector('.job-support li').textContent = 'Synthetic accommodation label with detailed practical arrangements '.repeat(4)");
+  for (const width of [320,375,768,1024,1440]) {
+    await client.send('Emulation.setDeviceMetricsOverride', { width, height: 950, deviceScaleFactor: 1, mobile: false });
+    for (const textScale of [100,200]) {
+      await client.evaluate(`document.documentElement.style.fontSize = '${textScale === 200 ? 32 : 16}px'`);
+      assert.ok(await client.evaluate(`(() => { const card=document.querySelector('.job-card'), description=card.querySelector('.job-description'), link=card.querySelector('.job-details-action'), footer=card.querySelector('.job-card-footer'); return document.documentElement.scrollWidth <= ${width} && description.scrollHeight <= description.clientHeight + 1 && link.scrollWidth <= link.clientWidth + 1 && footer.getBoundingClientRect().bottom <= card.getBoundingClientRect().bottom; })()`), 'Long descriptions, support labels and footer actions reflow without clipping');
+      checks.push({ context, mode: 'long-content', width, textScale, passed: true });
+    }
+  }
+  await client.evaluate(`document.querySelector('.job-description').textContent = ${JSON.stringify(original.description)}; document.querySelector('.job-support li').textContent = ${JSON.stringify(original.support)}; document.documentElement.style.fontSize = ''; document.documentElement.classList.toggle('reduced-motion', ${reduced}); window.scrollTo(0,0)`);
+  await client.send('Emulation.clearDeviceMetricsOverride');
+  return checks;
+}
+
+async function reviewCardAlignment(path, label, authenticated) {
+  const original = await client.evaluate("(() => { const list = document.querySelector('.job-card .job-support ul'); if (!list) throw new Error('Missing accommodation list'); const html = list.innerHTML; for (const text of ['Synthetic: step-free interview access', 'Synthetic: written recruitment materials', 'Synthetic: flexible interview timing', 'Synthetic: assistive technology arrangements']) { const item = document.createElement('li'); item.textContent = text; list.append(item); } return html; })()");
+  const results = [];
+  for (const theme of ['light', 'dark-mode', 'high-contrast']) {
+    await client.evaluate(`document.documentElement.classList.add('${theme}')`);
+    for (const width of [320,375,768,1024,1440]) {
+      await client.send('Emulation.setDeviceMetricsOverride', { width, height: 950, deviceScaleFactor: 1, mobile: false });
+      for (const textScale of [100,200]) {
+        await client.evaluate(`document.documentElement.style.fontSize = '${textScale === 200 ? 32 : 16}px'`);
+        const measurement = await client.evaluate(`(() => {
+          const cards = [...document.querySelectorAll('.job-card')];
+          const rows = [];
+          for (const card of cards) {
+            const host = card.closest('.saved-job-item, .recommendation-card') || card;
+            const rect = host.getBoundingClientRect();
+            let row = rows.find(value => Math.abs(value.top - rect.top) < 2);
+            if (!row) { row = { top: rect.top, cards: [] }; rows.push(row); }
+            row.cards.push({ bottom: rect.bottom, footer: card.querySelector('.job-card-footer').getBoundingClientRect().bottom, action: card.querySelector('.job-details-action')?.getBoundingClientRect().bottom });
+          }
+          const spread = values => values.length ? Math.max(...values) - Math.min(...values) : 0;
+          return {
+            overflow: document.documentElement.scrollWidth > ${width},
+            rows: rows.length,
+            multiCardRows: rows.filter(row => row.cards.length > 1).length,
+            aligned: rows.every(row => spread(row.cards.map(card => card.bottom)) <= 2 && spread(row.cards.map(card => card.footer)) <= 2 && spread(row.cards.map(card => card.action).filter(value => value !== undefined)) <= 2),
+            footerAtBottom: cards.every(card => Math.abs(card.getBoundingClientRect().bottom - card.querySelector('.job-card-footer').getBoundingClientRect().bottom) <= 2),
+            clipped: [...document.querySelectorAll('.job-description, .job-support li, .job-details-action')].some(element => element.scrollHeight > element.clientHeight + 1 || element.scrollWidth > element.clientWidth + 1)
+          };
+        })()`);
+        results.push({ path, authenticated, theme, width, textScale, ...measurement });
+        assert.ok(!measurement.overflow && measurement.aligned && measurement.footerAtBottom && !measurement.clipped, 'Mixed accommodation counts align card bottoms and details actions without clipping: ' + JSON.stringify(results.at(-1)));
+        if (theme === 'light' && textScale === 100 && width === 1440) {
+          await client.evaluate("document.querySelector('.job-card').scrollIntoView({ block: 'center' })");
+          const name = path === '/' ? 'featured' : path.slice(1).replaceAll('/', '-');
+          writeFileSync(join(backend, `storage/framework/cache/ui-${label}-${authenticated ? 'applicant' : 'public'}-${name}-alignment.png`), Buffer.from((await client.send('Page.captureScreenshot', { format: 'png' })).data, 'base64'));
+        }
+      }
+    }
+    await client.evaluate(`document.documentElement.classList.remove('${theme}')`);
+  }
+  assert.ok(results.some(result => result.multiCardRows > 0), 'Alignment review includes real multi-card rows');
+  await client.evaluate(`document.querySelector('.job-card .job-support ul').innerHTML = ${JSON.stringify(original)}; document.documentElement.style.fontSize = ''; window.scrollTo(0,0)`);
+  await client.send('Emulation.clearDeviceMetricsOverride');
+  return results;
+}
+
+async function reviewUI() {
+  const widths = [320, 375, 768, 1024, 1440];
+  const label = /^[a-z0-9-]{1,24}$/.test(process.env.PWDWORK_UI_LABEL || '') ? process.env.PWDWORK_UI_LABEL : 'review';
+  const results = [];
+  const themeResults = [];
+  const cardChecks = [];
+  const alignmentChecks = [];
+  await go('/');
+  await fill('#heroSearchInput', 'Browser');
+  await fill('#heroLocationInput', 'Manila');
+  await click('Search jobs');
+  await check("location.pathname === '/jobs' && new URLSearchParams(location.search).get('q') === 'Browser' && new URLSearchParams(location.search).get('location') === 'Manila'", 'Hero search preserves keyword and location');
+  const visits = [
+    [null, ['/', '/jobs', '/jobs/1', '/employers', '/about', '/login', '/register', '/forgot-password', '/reset-password', '/missing-page']],
+    ['candidate@browser.example', ['/applicant', '/jobs', '/jobs/1', '/applicant/profile', '/applicant/recommendations', '/applicant/applications', '/applicant/saved-jobs', '/applicant/accommodation-requests', '/applicant/accommodation-requests/new', '/applicant/resumes', '/notifications', '/reports']],
+    ['owner@browser.example', ['/employer', '/employer/profile', '/employer/listings', '/employer/applicants', '/employer/accommodation-requests', '/notifications', '/reports']],
+    ['admin@browser.example', ['/admin', '/admin/employers', '/admin/jobs', '/admin/users', '/admin/reports', '/admin/audit', '/notifications']],
+  ];
+  let authenticated = false;
+  let requestId;
+  for (const [email, configuredPaths] of visits) {
+    if (authenticated) await logout();
+    if (email) { await login(email); authenticated = true; }
+    const paths = [...configuredPaths];
+    if (email === 'candidate@browser.example') {
+      requestId = await client.evaluate(`(async () => {
+        await fetch('/api/csrf-cookie', { credentials: 'same-origin' });
+        const applications = await (await fetch('/api/applicant/applications', { headers: { Accept: 'application/json' } })).json();
+        const token = decodeURIComponent(document.cookie.split('; ').find(v => v.startsWith('XSRF-TOKEN=')).split('=').slice(1).join('='));
+        const response = await fetch('/api/accommodation-requests', { method: 'POST', headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'X-XSRF-TOKEN': token }, body: JSON.stringify({ application_id: applications.applications[0].applicationId, action_key: crypto.randomUUID(), share_request: true, stage: 'interview', categories: ['Accessible restroom'], details: 'Synthetic browser request: please confirm a step-free room.' }) });
+        const data = await response.json(); if (!response.ok) throw new Error(data.message); return data.request.id;
+      })()`);
+      paths.push(`/applicant/accommodation-requests/${requestId}`);
+    } else if (email === 'owner@browser.example') paths.push(`/employer/accommodation-requests/${requestId}`);
+    for (const path of paths) {
+      console.log('UI review ' + path);
+      await go(path);
+      await check("![...document.querySelectorAll('main [role=status]')].some(el => el.textContent.includes('Loading'))", 'page data ready');
+      if (email === 'candidate@browser.example' && path.startsWith('/jobs')) assert.ok(await client.evaluate("document.querySelector('.workspace-mode .app-sidebar') !== null"), 'Signed-in job discovery retains the applicant workspace');
+      if (['/', '/applicant', '/employer'].includes(path)) await verifyMobileMenu();
+      if (path === '/register') {
+        await fill('#register-password', 'synthetic-visible-password');
+        await click('Show password');
+        assert.ok(await client.evaluate("document.querySelector('#register-password').type === 'text' && document.querySelector('#register-password').value === 'synthetic-visible-password'"), 'Show password preserves the entered value');
+        await click('Hide password');
+        assert.equal(await client.evaluate("document.querySelector('#register-password').type"), 'password');
+        await fill('#register-password', '');
+      }
+      if (path === '/applicant/resumes') {
+        await click('Create Resume');
+        await fill('.resume-builder form input[required]', 'Presentation resume');
+        await fill('.resume-builder form input[maxlength="160"]', 'Browser Applicant');
+        await click('Save resume and preview');
+        await check("!!document.querySelector('iframe') && [...document.querySelectorAll('main button')].some(b => b.textContent === 'Close editor' && !b.disabled)", 'matrix resume saved');
+      }
+      for (const width of widths) {
+        await client.send('Emulation.setDeviceMetricsOverride', { width, height: 950, deviceScaleFactor: 1, mobile: false });
+        for (const textScale of [100, 200]) {
+        await client.evaluate(`document.documentElement.style.fontSize = '${textScale === 200 ? 32 : 16}px'`);
+        const measurement = await client.evaluate(`({ overflow: document.documentElement.scrollWidth > ${width}, scrollWidth: document.documentElement.scrollWidth,
+          unlabeled: [...document.querySelectorAll('main input:not([type=hidden]), main textarea, main select')].filter(el => !el.labels?.length && !el.getAttribute('aria-label') && !el.getAttribute('aria-labelledby')).length,
+          alerts: [...document.querySelectorAll('main [role=alert]')].map(el => el.textContent.trim()).filter(Boolean),
+          offenders: [...document.querySelectorAll('main *,header *,footer *')].filter(el => { const r=el.getBoundingClientRect(); return r.width && r.right > ${width + 1}; }).slice(-5).map(el => ({tag:el.tagName, class:el.className})) })`);
+        results.push({ path, width, textScale, ...measurement });
+        if (textScale === 100 && [375, 1440].includes(width) && ['/', '/jobs', '/applicant', '/employer', '/applicant/applications', '/applicant/resumes', '/employer/applicants', '/applicant/accommodation-requests', '/admin'].includes(path)) {
+          await client.evaluate("window.scrollTo(0,0)");
+          const name = path === '/' ? 'home' : path.slice(1).replaceAll('/', '-');
+          writeFileSync(join(backend, `storage/framework/cache/ui-${label}-${name}-${width}.png`), Buffer.from((await client.send('Page.captureScreenshot', { format: 'png' })).data, 'base64'));
+        }
+        }
+      }
+      await client.evaluate("document.documentElement.style.fontSize = ''");
+      if (['/', '/jobs', '/applicant', '/employer', '/applicant/resumes', '/applicant/accommodation-requests', '/admin', '/login', '/register'].includes(path)) {
+        for (const theme of ['light', 'dark-mode', 'high-contrast']) {
+          await client.evaluate(`document.documentElement.classList.add('${theme}')`);
+          for (const width of [375, 1440]) {
+            await client.send('Emulation.setDeviceMetricsOverride', { width, height: 950, deviceScaleFactor: 1, mobile: false });
+            const measurement = await client.evaluate(`(() => {
+              const style = getComputedStyle(document.documentElement);
+              const luminance = token => {
+                const rawColor = (token.startsWith('#') ? token : style.getPropertyValue(token)).trim().replace('#','');
+                const color = rawColor.length === 3 ? [...rawColor].map(channel => channel + channel).join('') : rawColor;
+                const channels = [0,2,4].map(i => parseInt(color.slice(i,i+2),16) / 255).map(v => v <= .04045 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4);
+                return channels[0] * .2126 + channels[1] * .7152 + channels[2] * .0722;
+              };
+              const pairs = [['--ui-ink','--ui-surface'],['--ui-muted','--ui-surface'],['--ui-accent','--ui-surface'],['--ui-mint-ink','--ui-mint'],['--ui-danger','--ui-danger-bg'],['--ui-positive','--ui-positive-bg'],['--ui-warning','--ui-warning-bg'],['#ffffff','--ui-action']];
+              const contrast = pairs.map(([text,bg]) => { const a=luminance(text), b=luminance(bg); return { text, bg, ratio: (Math.max(a,b)+.05)/(Math.min(a,b)+.05) }; });
+              return { overflow: document.documentElement.scrollWidth > ${width}, contrast };
+            })()`);
+            themeResults.push({ path, width, theme, ...measurement });
+            if (width === 1440) {
+              await client.evaluate('window.scrollTo(0,0)');
+              const name = path === '/' ? 'home' : path.slice(1).replaceAll('/', '-');
+              writeFileSync(join(backend, `storage/framework/cache/ui-${label}-${name}-${theme}.png`), Buffer.from((await client.send('Page.captureScreenshot', { format: 'png' })).data, 'base64'));
+            }
+          }
+          await client.evaluate(`document.documentElement.classList.remove('${theme}')`);
+        }
+      }
+      if (path === '/applicant/resumes') {
+        for (const width of [375,1440]) {
+          await client.send('Emulation.setDeviceMetricsOverride', { width, height: 950, deviceScaleFactor: 1, mobile: false });
+          await client.evaluate("document.querySelector('.resume-preview-panel').scrollIntoView({ block: 'start' })");
+          writeFileSync(join(backend, `storage/framework/cache/ui-${label}-resume-editor-${width}.png`), Buffer.from((await client.send('Page.captureScreenshot', { format: 'png' })).data, 'base64'));
+        }
+      }
+      if (path === '/jobs') cardChecks.push(...await reviewJobCards(label, Boolean(email)));
+      if (['/', '/jobs', '/applicant/recommendations', '/applicant/saved-jobs'].includes(path)) alignmentChecks.push(...await reviewCardAlignment(path, label, Boolean(email)));
+      await client.send('Emulation.clearDeviceMetricsOverride');
+    }
+  }
+  await go('/about');
+  await client.evaluate("document.querySelector('aside details').open = true");
+  for (const [name, className] of [['High contrast', 'high-contrast'], ['Dark mode', 'dark-mode'], ['Reduced motion', 'reduced-motion'], ['Dyslexia-friendly reading font', 'dyslexia-font'], ['Large cursor', 'large-cursor']]) {
+    const previous = await client.evaluate(`document.documentElement.classList.contains(${JSON.stringify(className)})`);
+    await click(`${name}: ${previous ? 'On' : 'Off'}`, 'aside');
+    await check(`document.documentElement.classList.contains(${JSON.stringify(className)}) === ${!previous}`, `${name} preference applies`);
+    await click(`${name}: ${previous ? 'Off' : 'On'}`, 'aside');
+    await check(`document.documentElement.classList.contains(${JSON.stringify(className)}) === ${previous}`, `${name} preference restores`);
+  }
+  await select('aside select', 'xlarge');
+  await check("document.documentElement.classList.contains('font-size-xlarge') && parseFloat(getComputedStyle(document.documentElement).fontSize) > 16", 'text resizing preference');
+  await select('aside select', 'normal');
+  writeFileSync(join(backend, `storage/framework/cache/ui-${label}-results.json`), JSON.stringify({ results, themeResults, cardChecks, alignmentChecks, preferenceChecks: 6, exceptions: client.exceptions }, null, 2));
+  const failures = results.filter(row => row.overflow || row.unlabeled || row.alerts.some(alert => !(row.path === '/reset-password' && alert.includes('reset token is missing'))));
+  console.log(JSON.stringify({ pages: results.length / (widths.length * 2), viewportChecks: results.length, failures, exceptions: client.exceptions }));
+  assert.equal(failures.length, 0, 'UI matrix overflow/labels/API error checks');
+  assert.deepEqual(themeResults.filter(row => row.overflow || row.contrast.some(pair => !Number.isFinite(pair.ratio) || pair.ratio < 4.5)), [], 'Theme reflow and semantic text contrast');
+  assert.deepEqual(client.exceptions, []);
+  passed(`Redesign: ${results.length} responsive/text checks, ${themeResults.length} theme checks, ${cardChecks.length} card stress/preference checks, ${alignmentChecks.length} mixed-content alignment checks, 6 accessibility preferences`);
+}
+
 try {
   await requireFreePort(apiPort, "127.0.0.1");
   await requireFreePort(frontendPort, "localhost");
   await requireFreePort(browserPort, "127.0.0.1");
   const fixture = spawnSync("php", ["tests/browser-fixture.php"], { cwd: backend, env, encoding: "utf8", windowsHide: true });
   assert.equal(fixture.status, 0, fixture.stderr || fixture.stdout);
-  launch("php", ["-S", `127.0.0.1:${apiPort}`, join(backend, "vendor/laravel/framework/src/Illuminate/Foundation/resources/server.php")], join(backend, "public"));
+  launch("php", ["-S", `127.0.0.1:${apiPort}`, join(backend, "tests/browser-router.php")], join(backend, "public"));
   launch(process.execPath, [join(root, "node_modules/vite/bin/vite.js"), ...(productionAssets ? ['preview'] : []), "--host", "localhost", "--port", String(frontendPort), "--strictPort", "--config", viteTestConfig], root,
     { ...process.env, VITE_API_URL: "/api" });
   await waitFor(async () => (await fetch(frontendOrigin + "/api/health")).ok, "Vite/API startup");
@@ -184,8 +475,20 @@ try {
   await client.send("Page.enable");
   await client.send("Runtime.enable");
   await client.send("Network.enable");
+  await client.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: 'light' }] });
+
+  if (process.env.PWDWORK_SMOKE_UI_ONLY) {
+    await reviewUI();
+  } else {
 
   if (!process.env.PWDWORK_SMOKE_PHASE4_ONLY && !process.env.PWDWORK_SMOKE_PHASE5_ONLY && !process.env.PWDWORK_SMOKE_PHASE6_ONLY) {
+  await go('/');
+  await verifyMobileMenu();
+  await fill('#heroSearchInput', 'Browser');
+  await fill('#heroLocationInput', 'Manila');
+  await click('Search jobs');
+  await check("location.pathname === '/jobs' && new URLSearchParams(location.search).get('q') === 'Browser' && new URLSearchParams(location.search).get('location') === 'Manila'", 'Hero search preserves keyword and location');
+  passed('Redesign public mobile menu, Escape/focus, current-route closure and hero search');
   await go("/jobs");
   await check("document.body.innerText.includes('27 matching jobs')", "job results");
   await click("Next page", 'nav[aria-label="Job search pages"]');
@@ -195,6 +498,7 @@ try {
   passed("public search pagination and Contract filter");
 
   await login("candidate@browser.example");
+  await verifyOverview();
   await go("/jobs/1");
   await check("[...document.querySelectorAll('main button')].some(el => el.textContent.trim() === 'Unsave job')", "oldest saved-job state");
   await go("/applicant/saved-jobs");
@@ -213,12 +517,16 @@ try {
   passed("cookie login, refresh, saved/application pagination, sharing and logout");
 
   await login("owner@browser.example");
+  await verifyOverview(true);
+  passed('Redesign applicant/employer overview totals, real recent jobs, partial failure and retry');
   await go("/employer/listings");
   await check("document.body.innerText.includes('Page 1 of 3')", "employer listing pages");
   await click("Next page", 'nav[aria-label="Employer listing pages"]');
   await check("document.body.innerText.includes('Page 2 of 3')", "employer listing next");
   await go("/employer/applicants");
   await check("document.body.innerText.includes('41 results')", "employer applications loaded");
+  assert.ok(await client.evaluate("[...document.querySelectorAll('.resume-sharing h3')].every(el => el.textContent === 'Resume Builder')"), 'Unshared builder resumes never imply active access');
+  assert.equal(await client.evaluate("document.body.innerText.includes('Resume shared with this application')"), false, 'Misleading shared-resume heading removed');
   await fill('input[placeholder="Name, email, experience..."]', 'Browser Candidate');
   await check("document.body.innerText.includes('Professional browser summary')", "real professional information");
   await client.evaluate("(() => { const el = document.querySelector('select[aria-label=\"Status for Browser Candidate\"]'); el.value = 'Shortlisted'; el.dispatchEvent(new Event('change', {bubbles:true})); })()");
@@ -238,8 +546,12 @@ try {
   await fill("#register-name", "Registered Browser Candidate");
   await fill("#register-email", "registered@browser.example");
   await fill("#register-password", "browser-password");
+  await click('Show password');
+  assert.ok(await client.evaluate("document.querySelector('#register-password').type === 'text' && document.querySelector('#register-password').value === 'browser-password'"), 'Show password preserves the entered value');
+  await click('Hide password');
+  assert.equal(await client.evaluate("document.querySelector('#register-password').type"), 'password');
   await click("Create account");
-  await check("location.pathname === '/jobs' && document.body.innerText.includes('Log out')", "browser registration");
+  await check("location.pathname === '/applicant' && document.body.innerText.includes('Log out')", "browser registration opens applicant overview");
   const storage = await client.evaluate("Object.keys(localStorage)");
   assert.ok(storage.every((key) => !/token|auth|profile|application/i.test(key)), "Sensitive data in localStorage");
   await logout();
@@ -247,20 +559,27 @@ try {
   await fill('main input[type="email"]', "registered@browser.example");
   await click("Send reset link");
   await check("document.body.innerText.includes('Request accepted.')", "queued recovery accepted");
-  const worker = spawnSync("php", ["artisan", "queue:work", "database", "--queue=password-resets", "--once", "--tries=1"],
-    { cwd: backend, env, windowsHide: true, encoding: "utf8" });
-  assert.equal(worker.status, 0, worker.stderr || worker.stdout);
-  const mail = worker.stderr + worker.stdout;
-  const token = mail.match(/token[=3D]+([a-f0-9]{64})/i)?.[1];
-  assert.ok(token, "Worker did not log a reset token");
-  await go(`/reset-password?token=${token}&email=registered%40browser.example`);
+  const testInbox = join(temp, 'reset-mail.json');
+  await waitFor(() => existsSync(testInbox), 'Deferred mail delivered to the isolated test inbox without a worker');
+  const resetLink = new URL(JSON.parse(readFileSync(testInbox, 'utf8')).url);
+  assert.ok(resetLink.origin === frontendOrigin && resetLink.pathname === '/reset-password' && resetLink.search === '' && resetLink.hash.includes('token='), 'Reset email uses the configured frontend and a private fragment');
+  await go(resetLink.pathname + resetLink.hash);
+  await check("!!document.querySelector('main input[type=password]')", 'Email link opens the reset form');
   await fill('main input[type="password"]', 'changed-password');
   await fill('main label:last-of-type input[type="password"]', 'changed-password');
   await click("Reset password");
   await check("document.body.innerText.includes('Password reset. Sign in')", "password reset complete");
+  assert.ok(await client.evaluate("location.hash === '' && location.search === '' && !document.querySelector('main input[type=password]')"), 'Successful reset removes URL secrets and hides the completed form');
+  await go(resetLink.pathname + resetLink.hash);
+  await check("!!document.querySelector('main input[type=password]')", 'Reopened link displays the reset form');
+  await fill('main input[type="password"]', 'replayed-password');
+  await fill('main label:last-of-type input[type="password"]', 'replayed-password');
+  await click('Reset password');
+  await check("document.body.innerText.includes('This reset link is invalid or expired. Request a new link.')", 'Used email link cannot be replayed');
+  assert.ok(!logs.join('').includes(new URLSearchParams(resetLink.hash.slice(1)).get('token')), 'Reset tokens are absent from captured server logs');
   await login("registered@browser.example", "changed-password");
   await logout();
-  passed("browser registration, queued log-mail recovery, reset and new-password login");
+  passed("browser registration, worker-free private email recovery, fragment links, single-use reset and new-password login");
 
   await client.send("Emulation.setDeviceMetricsOverride", { width: 320, height: 800, deviceScaleFactor: 1, mobile: false });
   await go("/jobs");
@@ -526,6 +845,10 @@ try {
   await check("document.body.innerText.includes('Create Resume')", 'resume dashboard');
   await click('Create Resume');
   await check("document.activeElement?.textContent === 'Resume editor'", 'resume editor receives focus');
+  await click('Import profile information');
+  await check("!!document.querySelector('dialog[open]') && document.querySelector('dialog[open]').contains(document.activeElement)", 'profile import requires focused confirmation');
+  await click('Cancel', 'dialog[open]');
+  await check("!document.querySelector('dialog[open]') && document.activeElement?.textContent === 'Import profile information'", 'import cancellation restores focus');
   await fill('.resume-builder form input[required]', 'Browser resume');
   await fill('.resume-builder form input[maxlength="160"]', 'Browser Applicant');
   await fill('.resume-builder form > label textarea', 'SEARCHABLE_BROWSER_RESUME');
@@ -551,6 +874,11 @@ try {
   await click('Close editor');
   await click('Duplicate');
   await check("document.querySelectorAll('.resume-builder article').length === 2", 'resume duplication');
+  await click('Delete');
+  await check("!!document.querySelector('dialog[open]')", 'resume delete confirmation');
+  await click('Confirm delete resume', 'dialog[open]');
+  await check("!document.querySelector('dialog[open]') && document.querySelectorAll('.resume-builder article').length === 1", 'confirmed resume deletion');
+  await check("document.activeElement?.textContent === 'My resumes'", 'deleted card focus moves to dashboard heading');
   await go('/applicant/applications');
   await click('Choose resume to share', '.resume-sharing');
   await check("!!document.querySelector('.resume-sharing select option[value]:not([value=\"\"])')", 'resume selection on application');
@@ -565,7 +893,10 @@ try {
   await check("[...document.querySelectorAll('.resume-sharing button')].some(b => b.textContent === 'Preview shared resume')", 'employer sees explicitly shared snapshot');
   await click('Preview shared resume', '.resume-sharing');
   await check("!!document.querySelector('.resume-sharing iframe')", 'authorized employer preview');
+  assert.ok(await client.evaluate("document.querySelector('.resume-sharing h3').textContent === 'Shared Resume Builder snapshot'"), 'Active sharing has a precise builder snapshot heading');
   assert.ok(await client.evaluate("document.querySelector('.resume-sharing iframe').srcdoc.includes('SEARCHABLE_BROWSER_RESUME')"), 'Employer receives saved resume');
+  await click('Close shared preview', '.resume-sharing');
+  await check("!document.querySelector('.resume-sharing iframe') && document.activeElement?.textContent === 'Preview shared resume'", 'shared preview close restores focus');
   await logout(); await login('candidate@browser.example');
   await go('/applicant/applications');
   await check("[...document.querySelectorAll('.resume-sharing button')].some(b => b.textContent === 'Revoke resume access')", 'resume revocation available');
@@ -594,6 +925,7 @@ try {
   assert.deepEqual(client.exceptions, [], 'Uncaught Phase 6 browser exceptions');
   passed('Phase 6 truthful public content, 200% text with 320px reflow, scrollable policy-information dialog and focus restoration');
   console.log("Browser smoke checks passed. Only isolated temporary SQLite fixtures were used.");
+  }
 } catch (error) {
   if (client) {
     try { console.error((await client.evaluate("document.body.innerText")).slice(0, 2500)); } catch { /* Browser may have exited. */ }
@@ -614,6 +946,6 @@ try {
   // Validate the absolute cleanup target before removing this run's own fixtures.
   if (resolve(dirname(temp)) === resolve(tmpdir()) && basename(temp).startsWith("pwdwork-browser-")) {
     try { rmSync(temp, { recursive: true, force: true, maxRetries: 3, retryDelay: 200 }); }
-    catch { console.error("Temporary browser files remain at " + temp); }
+    catch { console.log("NOTE: Temporary browser files remain at " + temp + ' because Windows still holds a file handle.'); }
   }
 }

@@ -5,6 +5,8 @@ import App from "./App.jsx";
 import { AuthProvider } from "./context/AuthContext.jsx";
 import { UiProvider } from "./context/UiContext.jsx";
 import "./index.css";
+import "./styles/ui.css";
+import "./styles/modern.css";
 
 // Keep local development on one origin so authentication and live data are shared
 // between tabs. `localhost` and `127.0.0.1` have separate session cookies.

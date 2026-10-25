@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Services\PasswordRecoveryMail;
 use Illuminate\Contracts\Queue\ShouldBeEncrypted;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -19,8 +20,13 @@ class SendPasswordResetLink implements ShouldBeEncrypted, ShouldQueue
 
     public function handle(): void
     {
-        // Account lookup and mail delivery run out of band for every request.
-        // Exceptions propagate to Laravel's retry and failed-jobs mechanisms.
-        Password::sendResetLink(['email' => $this->email]);
+        try {
+            // Validate the selected transport even for unknown addresses. Never fall back to logs.
+            app(PasswordRecoveryMail::class)->mailer();
+            Password::sendResetLink(['email' => $this->email]);
+        } catch (\Throwable) {
+            // Worker/deferred exceptions must not expose SMTP transcripts, URLs or API keys.
+            throw new \RuntimeException('Password recovery delivery failed. Check the mail configuration and provider dashboard.');
+        }
     }
 }

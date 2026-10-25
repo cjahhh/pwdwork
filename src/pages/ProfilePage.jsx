@@ -6,6 +6,7 @@ import RequestState from "../components/RequestState.jsx";
 import { accommodationOptions } from "../services/filters.js";
 import { requestEmployerReview, fetchVerificationHistory } from "../services/moderation.js";
 import HistoryList from "../components/HistoryList.jsx";
+import PageHeader from "../components/PageHeader.jsx";
 export default function ProfilePage() {
   const { user } = useAuth();
   const resource = useResource(
@@ -14,7 +15,7 @@ export default function ProfilePage() {
   );
   return (
     <main className="page-shell">
-      <h1>{user.role === "employer" ? "Company profile" : "Your profile"}</h1>
+      <PageHeader eyebrow="Make a clear first impression" title={user.role === "employer" ? "Company profile" : "Your profile"} icon="user" description="Keep your professional story and preferences up to date." />
       <RequestState resource={resource} />
       {resource.data && (
         <Editor
@@ -71,9 +72,9 @@ function Editor({ initial, employer }) {
         ["experience", "Relevant work or volunteer experience"],
       ];
   return (
-    <form onSubmit={save} className="panel space-y-5" aria-busy={busy}>
+    <form onSubmit={save} className="panel profile-form space-y-5" aria-busy={busy}>
       {error && <p role="alert">{error}</p>}
-      <p role="status">{message}</p>
+      <p role="status" className={message ? 'request-feedback status-positive' : undefined}>{message}</p>
       {employer ? (
         <div>
         <p>
@@ -87,7 +88,7 @@ function Editor({ initial, employer }) {
       ) : (
         <p>Account email: {profile.email}</p>
       )}
-      {fields.map(([field, label]) => (
+      <section className="profile-section"><h2>{employer ? 'Company information' : 'Professional information'}</h2><p>{employer ? 'Help applicants understand your organization and the work you do.' : 'Tell employers about your strengths, experience and professional interests.'}</p><div className="profile-field-grid">{fields.map(([field, label]) => (
         <label className="block" key={field}>
           <span className="form-label">{label}</span>
           {["bio", "description", "experience"].includes(field) ? (
@@ -108,9 +109,9 @@ function Editor({ initial, employer }) {
             />
           )}
         </label>
-      ))}
+      ))}</div></section>
       {!employer && (
-        <>
+        <section className="profile-section"><h2>Skills &amp; work preferences</h2>
           <p>Skills and work/location preferences improve Fit &amp; Access Match. Summary and experience help employers understand your background; they are not scored. Accommodation disclosure is optional and never changes your score.</p>
           <label className="block"><span className="form-label">Preferred work arrangement (optional)</span><select className="form-input" value={profile.preferredWorkMode || ""} onChange={(e) => update("preferredWorkMode", e.target.value)}><option value="">No preference</option>{["Remote", "Hybrid", "Onsite"].map(mode => <option key={mode}>{mode}</option>)}</select></label>
           <label className="block">
@@ -121,7 +122,7 @@ function Editor({ initial, employer }) {
               onChange={(e) => update("skills", e.target.value.split(","))}
             />
           </label>
-          <fieldset>
+          <fieldset className="profile-privacy">
             <legend>Requested accommodations (optional)</legend>
             <p>These stay private unless you choose to share them for an application. Professional summaries and experience are visible to employers you apply to; do not include medical diagnoses.</p>
             {[
@@ -144,7 +145,7 @@ function Editor({ initial, employer }) {
               </label>
             ))}
           </fieldset>
-        </>
+        </section>
       )}
       <button className="primary-button" disabled={busy}>
         {busy ? "Saving..." : "Save profile"}

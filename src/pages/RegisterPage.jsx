@@ -4,6 +4,7 @@ import { useAuth } from "../context/AuthContext.jsx";
 import { useUi } from "../context/UiContext.jsx";
 import { apiErrorMessage } from "../services/api.js";
 import { dashboardPath } from "../services/auth.js";
+import AuthLayout from "../components/AuthLayout.jsx";
 
 function RegisterPage() {
   const { register } = useAuth();
@@ -15,6 +16,7 @@ function RegisterPage() {
   const [companyName, setCompanyName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
@@ -41,9 +43,8 @@ function RegisterPage() {
   }
 
   return (
-    <main className="bg-brand-gray-bg py-16">
-      <div className="max-w-lg mx-auto px-6">
-        <div className="bg-white rounded-3xl p-8 shadow-soft-xl border-2 border-brand-blue space-y-6">
+    <AuthLayout>
+        <div className="auth-card space-y-6">
           <div>
             <p className="text-xs text-brand-teal font-bold uppercase tracking-wider">Join PWDWork</p>
             <h1 className="text-3xl font-black text-brand-dark mt-1">Sign Up</h1>
@@ -82,7 +83,7 @@ function RegisterPage() {
                     value="employer"
                     checked={role === "employer"}
                     onChange={() => setRole("employer")}
-                    className="sr-only"
+                    className="accent-brand-teal"
                   />
                   Employer
                 </label>
@@ -135,9 +136,9 @@ function RegisterPage() {
               <label htmlFor="register-password" className="block text-xs font-extrabold uppercase tracking-wider text-brand-teal mb-1">
                 Password (at least 8 characters)
               </label>
-              <input
+              <div className="password-control"><input
                 id="register-password"
-                type="password"
+                type={showPassword ? 'text' : 'password'}
                 autoComplete="new-password"
                 required
                 minLength={8}
@@ -145,6 +146,7 @@ function RegisterPage() {
                 onChange={(event) => setPassword(event.target.value)}
                 className="w-full px-4 py-3 bg-gray-50 border-2 border-gray-200 rounded-xl font-medium text-brand-dark focus:bg-white focus:border-brand-blue"
               />
+              <button type="button" aria-controls="register-password" aria-pressed={showPassword} onClick={() => setShowPassword(value => !value)}>{showPassword ? 'Hide password' : 'Show password'}</button></div>
             </div>
             <button
               type="submit"
@@ -162,8 +164,7 @@ function RegisterPage() {
             </Link>
           </p>
         </div>
-      </div>
-    </main>
+    </AuthLayout>
   );
 }
 
