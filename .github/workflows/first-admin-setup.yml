@@ -1,0 +1,99 @@
+name: PWDWork First Admin Setup
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: 'Type CREATE FIRST PWDWORK ADMIN to promote the dedicated existing account'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: aiven-pwdwork-prod-initialization
+  cancel-in-progress: false
+
+jobs:
+  first-admin:
+    if: github.ref == 'refs/heads/main' && github.repository == 'cjahhh/pwdwork'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      CONFIRMATION: ${{ inputs.confirmation }}
+      EXPECTED_DB_HOST: ${{ vars.AIVEN_EXPECTED_HOST }}
+      EXPECTED_DB_PORT: ${{ vars.AIVEN_EXPECTED_PORT }}
+    steps:
+      - name: Checkout exact manual commit
+        uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Verify authorization before build or secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          if [[ "$CONFIRMATION" != 'CREATE FIRST PWDWORK ADMIN' ]]; then
+            echo '::error::Exact first administrator confirmation required.'
+            exit 1
+          fi
+          if [[ -z "$EXPECTED_DB_HOST" || -z "$EXPECTED_DB_PORT" ]]; then
+            echo '::error::Independent expected Aiven host and port variables are required.'
+            exit 1
+          fi
+
+      - name: Build existing image without deployment secrets
+        run: docker build --pull --tag pwdwork-first-admin:manual .
+
+      - name: Promote only the selected existing account
+        shell: bash
+        env:
+          DB_HOST: ${{ secrets.AIVEN_DB_HOST }}
+          DB_PORT: ${{ secrets.AIVEN_DB_PORT }}
+          DB_DATABASE: ${{ secrets.AIVEN_DB_DATABASE }}
+          DB_USERNAME: ${{ secrets.AIVEN_DB_USERNAME }}
+          DB_PASSWORD: ${{ secrets.AIVEN_DB_PASSWORD }}
+          AIVEN_CA_PEM: ${{ secrets.AIVEN_CA_PEM }}
+          APP_KEY: ${{ secrets.AIVEN_APP_KEY }}
+          PWDWORK_BOOTSTRAP_ADMIN_EMAIL: ${{ secrets.PWDWORK_BOOTSTRAP_ADMIN_EMAIL }}
+        run: |
+          set -euo pipefail
+          umask 077
+          private_dir="$(mktemp -d "$RUNNER_TEMP/pwdwork-first-admin.XXXXXXXX")"
+          container_name="pwdwork-first-admin-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          cleanup() {
+            docker rm -f "$container_name" >/dev/null 2>&1 || true
+            rm -f -- "$private_dir/ca.pem"
+            rmdir -- "$private_dir" || true
+          }
+          trap cleanup EXIT
+          trap 'exit 1' HUP INT TERM
+          if [[ -z "$AIVEN_CA_PEM" || -z "$PWDWORK_BOOTSTRAP_ADMIN_EMAIL" ]]; then
+            echo '::error::CA and dedicated bootstrap account secrets are required.'
+            exit 1
+          fi
+          printf '%s\n' "$AIVEN_CA_PEM" > "$private_dir/ca.pem"
+          container_uid="$(docker run --rm --network none --entrypoint id pwdwork-first-admin:manual -u www-data)"
+          [[ "$container_uid" =~ ^[0-9]+$ ]]
+          chmod 600 "$private_dir/ca.pem"
+          sudo chown "$container_uid" "$private_dir/ca.pem"
+          unset AIVEN_CA_PEM
+          docker run --rm --name "$container_name" \
+            --user www-data --workdir /var/www/backend \
+            --cap-drop ALL --security-opt no-new-privileges \
+            --mount "type=bind,src=$private_dir/ca.pem,dst=/run/aiven-ca.pem,readonly" \
+            --mount "type=bind,src=$GITHUB_WORKSPACE/.github/scripts/first-admin-setup.php,dst=/run/first-admin-setup.php,readonly" \
+            --env CONFIRMATION --env GITHUB_REF --env GITHUB_REPOSITORY \
+            --env EXPECTED_DB_HOST --env EXPECTED_DB_PORT \
+            --env DB_HOST --env DB_PORT --env DB_DATABASE --env DB_USERNAME --env DB_PASSWORD \
+            --env PWDWORK_BOOTSTRAP_ADMIN_EMAIL --env APP_KEY \
+            --env APP_ENV=production --env APP_DEBUG=false \
+            --env DB_CONNECTION=mysql --env DB_URL= --env DB_SOCKET= \
+            --env MYSQL_ATTR_SSL_CA=/run/aiven-ca.pem \
+            --env APP_CONFIG_CACHE=/tmp/pwdwork-first-admin-config.php \
+            --env CACHE_STORE=array --env SESSION_DRIVER=array --env QUEUE_CONNECTION=sync \
+            --env 'LOG_CHANNEL="null"' \
+            --entrypoint php pwdwork-first-admin:manual /run/first-admin-setup.php
