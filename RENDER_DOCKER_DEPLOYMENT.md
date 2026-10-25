@@ -97,6 +97,32 @@ Download the CA certificate from your Aiven service's connection information. In
 
 PDO now sets `MYSQL_ATTR_SSL_VERIFY_SERVER_CERT=true` whenever a CA is configured, for both MySQL and MariaDB configurations. Container startup rejects a missing/unreadable/non-PEM CA or absent verification setting. Keep the exact Aiven hostname so TLS hostname verification succeeds; never work around a failure by disabling verification or using an IP address. Local MySQL behavior is unchanged when no CA is set.
 
+### Temporary database failure diagnostics
+
+Production `QueryException` reports now contain a fixed message, `Database failure diagnostics.`, and only three diagnostic fields: `sqlstate`, `mysql_driver_code`, and `category`. Missing or malformed codes become JSON null. The reporter never reads exception messages, SQL, bindings, connection details or certificate contents, and stops Laravel's default exception logging. Existing API responses and debug settings are unchanged; keep `APP_DEBUG=false`. Other exceptions retain the existing sanitized report. This is temporary: remove the QueryException reporting branch and its `DatabaseFailureDiagnostics` helper after diagnosis. Keep log access restricted as usual.
+
+| Driver code | Category / next area to inspect privately |
+| --- | --- |
+| 2002 / 2003 | Connection failure; check endpoint, port, approved Render network path and TLS setup |
+| 2005 | DNS resolution failure |
+| 2006 / 2013 | Lost connection |
+| 2026 | TLS failure; check CA file access, validity and hostname |
+| 1045 | Authentication failure |
+| 1044 / 1142 / 1143 | Database or statement permission denied |
+| 1049 | Database not found |
+| 1146 / 1054 | Table or column not found on the selected target |
+| 1040 / 1203 | Connection limit |
+
+Categories describe the reported code, not a confirmed root cause. A general `HY000` or connection error cannot prove a particular network or certificate fault. Codes follow the [MySQL client](https://dev.mysql.com/doc/mysql-errors/8.4/en/client-error-reference.html) and [server error references](https://dev.mysql.com/doc/mysql-errors/8.4/en/server-error-reference.html). The diagnostics intentionally do not parse error messages to distinguish ambiguous errors.
+
+A successful GitHub Actions migration proves that runner's configuration and network path worked at that time. It does not establish Render's current target, credentials, privileges, network access or runtime certificate access. Both public jobs and authenticated user requests can touch shared database-backed rate limits, sessions and application tables. No specific cause is established by `QueryException` alone.
+
+For Render Secret Files, set `MYSQL_ATTR_SSL_CA` to the absolute runtime **file path**, such as `/etc/secrets/aiven-ca.pem`, not the PEM contents or the GitHub runner's `/run/aiven-ca.pem` path. See [Render Secret Files](https://render.com/docs/configure-environment-variables). Startup checks run as root, whereas FPM workers run as `www-data`: a passing root readability check does not establish worker readability. Privately verify the file and every parent directory are accessible to that worker without printing file contents. Do not change ownership or permissions speculatively, copy secrets into the image, or disable verification. The repository does not reveal the live file's permissions, so no live permission fault is confirmed.
+
+The entrypoint rebuilds Laravel's config cache after runtime environment injection, and FPM preserves the environment (`clear_env=no`). `DB_URL` must remain unset, as it can override individual database settings; the startup validator already rejects it. Privately compare Render's host, port and database with the approved Aiven deployment record. Do not dump environment variables or cached configuration into logs. Do not rerun migrations or weaken Aiven network restrictions to troubleshoot this incident.
+
+After a separately approved deployment of this diagnostic change, reproduce one failing request and inspect only the three fields above in restricted Render logs. The existing `stderr` logger must permit error-level records (the Docker default is `warning`); a stricter level can filter them out. Use the observed code to guide the next fix, then remove the temporary diagnostics. These instructions do not authorize a deployment or database operation.
+
 Allow the service's documented Render outbound ranges in Aiven's network rules. Separately allow only the trusted operator's IP while performing manual setup, then remove that temporary allowance. Use a migration account with the required schema privileges; after setup, prefer a scoped runtime account. The image does not connect to Aiven during a build or import local data.
 
 ## Temporary disk, uploads, memory, and mail delivery

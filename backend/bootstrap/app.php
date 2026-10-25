@@ -3,7 +3,9 @@
 use App\Http\Middleware\ApiResponseHeaders;
 use App\Http\Middleware\EnsureUserRole;
 use App\Support\ApiSafety;
+use App\Support\DatabaseFailureDiagnostics;
 use Illuminate\Auth\AuthenticationException;
+use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -44,6 +46,15 @@ return Application::configure(basePath: dirname(__DIR__))
         // Production logs deliberately exclude exception messages/SQL bindings and request data.
         $exceptions->report(function (Throwable $exception) {
             if (app()->environment('production')) {
+                // Temporary: pass only three validated scalar fields, never the
+                // exception itself. Returning false prevents Laravel's default
+                // reporter from appending messages, bindings or stack traces.
+                if ($exception instanceof QueryException) {
+                    Log::error('Database failure diagnostics.', DatabaseFailureDiagnostics::context($exception));
+
+                    return false;
+                }
+
                 Log::error('Application exception; inspect protected monitoring and reproduce in staging.', [
                     'exception_type' => get_class($exception),
                 ]);
