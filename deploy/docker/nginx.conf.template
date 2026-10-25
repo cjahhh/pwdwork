@@ -1,0 +1,66 @@
+user www-data;
+worker_processes 1;
+pid /tmp/nginx/nginx.pid;
+# Nginx error messages can include entire request URLs. Do not collect those.
+error_log /dev/stderr crit;
+events { worker_connections 512; }
+http {
+    include /etc/nginx/mime.types;
+    default_type application/octet-stream;
+    server_tokens off;
+    access_log off;
+    sendfile on;
+    keepalive_timeout 15;
+    client_body_timeout 20;
+    client_header_timeout 20;
+    client_body_temp_path /tmp/nginx/client;
+    fastcgi_temp_path /tmp/nginx/fastcgi;
+    proxy_temp_path /tmp/nginx/proxy;
+    uwsgi_temp_path /tmp/nginx/uwsgi;
+    scgi_temp_path /tmp/nginx/scgi;
+    fastcgi_buffers 8 16k;
+    gzip on;
+    gzip_types text/css application/javascript application/json image/svg+xml;
+
+    # Render's public ingress passes through Cloudflare, which sets this single IP.
+    # Never select a client-controlled entry from the X-Forwarded-For chain.
+    # Used ONLY in Render mode; direct local Docker requests use the socket IP.
+    geo $http_cf_connecting_ip $render_header_is_ip {
+        0.0.0.0/0 1;
+        ::/0 1;
+        # The geo module represents malformed input as this broadcast address.
+        255.255.255.254/31 0;
+    }
+    map $render_header_is_ip $render_client_ip {
+        default $remote_addr;
+        1 $http_cf_connecting_ip;
+    }
+    server {
+        listen 0.0.0.0:${PORT};
+        server_name _;
+        root /var/www/frontend;
+        index index.html;
+        client_max_body_size 8m;
+        add_header X-Content-Type-Options nosniff always;
+        add_header Referrer-Policy strict-origin always;
+        add_header X-Frame-Options SAMEORIGIN always;
+        add_header Strict-Transport-Security "max-age=31536000" always;
+        add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
+        add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob:; font-src 'self' https://fonts.gstatic.com; connect-src 'self'; frame-src 'self' about: blob:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'" always;
+
+        location ~ (^|/)\. { return 404; }
+        location ~* \.(php|env|sql|sqlite|bak|pem|key)(/|$) { return 404; }
+        location = /api { include /etc/nginx/fastcgi-app.conf; }
+        location /api/ { include /etc/nginx/fastcgi-app.conf; }
+        location = /sanctum/csrf-cookie { include /etc/nginx/fastcgi-app.conf; }
+        location = /up { include /etc/nginx/fastcgi-app.conf; }
+        location /assets/ {
+            try_files $uri =404;
+            expires 1y;
+        }
+        location / {
+            try_files $uri /index.html;
+            expires -1;
+        }
+    }
+}

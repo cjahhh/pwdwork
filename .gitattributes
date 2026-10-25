@@ -1,0 +1,4 @@
+# Container scripts and configuration must remain Unix text on Windows checkouts.
+/Dockerfile text eol=lf
+/.dockerignore text eol=lf
+/deploy/docker/* text eol=lf
