@@ -1,0 +1,112 @@
+name: Aiven initial migrations
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: 'INSPECT is read-only; PREVIEW may create migration bookkeeping'
+        type: choice
+        default: INSPECT
+        options: [INSPECT, PREVIEW, APPLY]
+      confirmation:
+        description: 'APPLY only: type APPLY pwdwork_prod'
+        type: string
+        default: ''
+      reviewed_sha:
+        description: 'APPLY only: full commit SHA reviewed in a separate PREVIEW run'
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: aiven-pwdwork-prod-initialization
+  cancel-in-progress: false
+
+jobs:
+  migrations:
+    if: github.ref == 'refs/heads/main' && github.repository == 'cjahhh/pwdwork'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      OPERATION: ${{ inputs.operation }}
+      CONFIRMATION: ${{ inputs.confirmation }}
+      REVIEWED_SHA: ${{ inputs.reviewed_sha }}
+      EXPECTED_DB_HOST: ${{ vars.AIVEN_EXPECTED_HOST }}
+      EXPECTED_DB_PORT: ${{ vars.AIVEN_EXPECTED_PORT }}
+    steps:
+      - name: Checkout exact dispatched commit
+        uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Validate manual authorization before build or secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          case "$OPERATION" in
+            INSPECT|PREVIEW) ;;
+            APPLY)
+              if [[ "$CONFIRMATION" != 'APPLY pwdwork_prod' ||
+                    ! "$REVIEWED_SHA" =~ ^[0-9a-f]{40}$ ||
+                    "$REVIEWED_SHA" != "$GITHUB_SHA" ]]; then
+                echo '::error::APPLY requires the exact phrase and the full PREVIEW commit SHA matching this main dispatch.'
+                exit 1
+              fi
+              ;;
+            *) echo '::error::Unknown operation.'; exit 1 ;;
+          esac
+          if [[ -z "$EXPECTED_DB_HOST" || -z "$EXPECTED_DB_PORT" ]]; then
+            echo '::error::Set independent repository variables AIVEN_EXPECTED_HOST and AIVEN_EXPECTED_PORT first.'
+            exit 1
+          fi
+          printf 'Operation: %s\nCommit to review: %s\n' "$OPERATION" "$GITHUB_SHA"
+
+      - name: Build existing image without deployment secrets
+        run: docker build --pull --tag pwdwork-aiven:manual .
+
+      - name: Run guarded operation with private mounted CA
+        shell: bash
+        env:
+          DB_HOST: ${{ secrets.AIVEN_DB_HOST }}
+          DB_PORT: ${{ secrets.AIVEN_DB_PORT }}
+          DB_DATABASE: ${{ secrets.AIVEN_DB_DATABASE }}
+          DB_USERNAME: ${{ secrets.AIVEN_DB_USERNAME }}
+          DB_PASSWORD: ${{ secrets.AIVEN_DB_PASSWORD }}
+          AIVEN_CA_PEM: ${{ secrets.AIVEN_CA_PEM }}
+          APP_KEY: ${{ secrets.AIVEN_APP_KEY }}
+        run: |
+          set -euo pipefail
+          umask 077
+          private_dir="$(mktemp -d "$RUNNER_TEMP/pwdwork-aiven.XXXXXXXX")"
+          container_name="pwdwork-aiven-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          cleanup() {
+            docker rm -f "$container_name" >/dev/null 2>&1 || true
+            rm -f -- "$private_dir/ca.pem"
+            rmdir -- "$private_dir" || true
+          }
+          trap cleanup EXIT
+          if [[ -z "$AIVEN_CA_PEM" ]]; then
+            echo '::error::AIVEN_CA_PEM is required.'
+            exit 1
+          fi
+          printf '%s\n' "$AIVEN_CA_PEM" > "$private_dir/ca.pem"
+          chmod 600 "$private_dir/ca.pem"
+          unset AIVEN_CA_PEM
+          docker run --rm --name "$container_name" \
+            --cap-drop ALL --security-opt no-new-privileges \
+            --mount "type=bind,src=$private_dir/ca.pem,dst=/run/aiven-ca.pem,readonly" \
+            --mount "type=bind,src=$GITHUB_WORKSPACE/.github/scripts/aiven-migrations.php,dst=/run/aiven-migrations.php,readonly" \
+            --env OPERATION --env CONFIRMATION --env REVIEWED_SHA --env GITHUB_SHA \
+            --env EXPECTED_DB_HOST --env EXPECTED_DB_PORT \
+            --env DB_HOST --env DB_PORT --env DB_DATABASE --env DB_USERNAME --env DB_PASSWORD \
+            --env APP_KEY --env APP_ENV=production --env APP_DEBUG=false \
+            --env DB_CONNECTION=mysql --env DB_URL= --env DB_SOCKET= \
+            --env MYSQL_ATTR_SSL_CA=/run/aiven-ca.pem \
+            --env APP_CONFIG_CACHE=/tmp/pwdwork-migration-config.php \
+            --env CACHE_STORE=array --env SESSION_DRIVER=array --env QUEUE_CONNECTION=sync \
+            --env 'LOG_CHANNEL="null"' \
+            --entrypoint php pwdwork-aiven:manual /run/aiven-migrations.php
