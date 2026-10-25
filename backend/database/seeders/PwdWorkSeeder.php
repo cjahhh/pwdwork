@@ -16,6 +16,9 @@ class PwdWorkSeeder extends Seeder
 {
     public function run(): void
     {
+        if (! app()->environment(['local', 'testing'])) {
+            throw new \RuntimeException('Demo seeding is permitted only in local or testing environments.');
+        }
         $accommodations = collect([
             ['slug' => 'remote', 'label' => 'Remote', 'icon' => '🌐'],
             ['slug' => 'onsite', 'label' => 'Onsite', 'icon' => '🏢'],

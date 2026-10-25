@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Jobs\SendPasswordResetLink;
+use App\Rules\PasswordByteLimit;
 use Illuminate\Auth\Events\PasswordReset;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -30,7 +31,7 @@ class PasswordController extends Controller
 
     public function reset(Request $request)
     {
-        $data = $request->validate(['email' => ['required', 'email'], 'token' => ['required', 'string'], 'password' => ['required', 'string', 'min:8', 'confirmed']]);
+        $data = $request->validate(['email' => ['required', 'email', 'max:255'], 'token' => ['required', 'string', 'max:255'], 'password' => ['required', 'string', 'min:8', 'confirmed', new PasswordByteLimit]]);
         $status = Password::reset($data, function ($user, $password) {
             DB::transaction(function () use ($user, $password) {
                 $user->forceFill(['password' => Hash::make($password), 'remember_token' => Str::random(60)])->save();

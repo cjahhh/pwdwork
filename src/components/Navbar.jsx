@@ -61,12 +61,12 @@ function Navbar() {
   return (
     <header aria-busy={!ready} className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-gray-200 shadow-sm">
       <nav
-        className="max-w-[1440px] mx-auto px-6 lg:px-12 py-4 flex items-center justify-between gap-6"
+        className="max-w-[1440px] mx-auto px-6 lg:px-12 py-4 flex flex-wrap xl:flex-nowrap items-center justify-between gap-6"
         aria-label="Main Navigation"
       >
         <Link
           to="/"
-          className="flex items-center gap-3 group"
+          className="flex flex-wrap items-center gap-3 group min-w-0 max-w-full"
           aria-label="PWDWork Homepage"
         >
           <div className="w-12 h-12 rounded-2xl bg-brand-blue flex items-center justify-center text-white shadow-md group-hover:scale-105 transition-transform duration-200">
@@ -79,7 +79,7 @@ function Navbar() {
               <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
             </svg>
           </div>
-          <div>
+          <div className="min-w-0 max-w-full">
             <span className="text-2xl font-black tracking-tight text-brand-blue block leading-none">
               PWDWork
             </span>

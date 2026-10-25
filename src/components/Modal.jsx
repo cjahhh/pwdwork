@@ -18,7 +18,7 @@ export default function Modal() {
       ref={ref}
       aria-labelledby="modal-heading"
       onCancel={closeModal}
-      className="rounded-2xl p-6 max-w-2xl w-[90%] bg-white text-brand-dark"
+      className="review-dialog rounded-2xl p-6 max-w-2xl w-[90%] bg-white text-brand-dark"
     >
       <h2 id="modal-heading">{modal?.title}</h2>
       <div>{modal?.content}</div>

@@ -6,6 +6,7 @@ use App\Models\AdminAuditLog;
 use App\Models\ApplicantProfile;
 use App\Models\Employer;
 use App\Models\User;
+use App\Rules\PasswordByteLimit;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -13,6 +14,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
+use Laravel\Sanctum\PersonalAccessToken;
 
 class AuthController extends Controller
 {
@@ -22,7 +24,7 @@ class AuthController extends Controller
         $data = $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'email', 'max:255', 'unique:users,email'],
-            'password' => ['required', 'string', 'min:8'],
+            'password' => ['required', 'string', 'min:8', new PasswordByteLimit],
             'role' => ['required', Rule::in(['applicant', 'employer'])],
             'company_name' => ['required_if:role,employer', 'nullable', 'string', 'max:255'],
         ]);
@@ -68,8 +70,8 @@ class AuthController extends Controller
     {
         abort_unless($request->hasSession(), 400, 'Use the configured first-party frontend origin.');
         $credentials = $request->validate([
-            'email' => ['required', 'email'],
-            'password' => ['required', 'string'],
+            'email' => ['required', 'email', 'max:255'],
+            'password' => ['required', 'string', new PasswordByteLimit],
         ]);
 
         $user = User::query()->where('email', $credentials['email'])->first();
@@ -99,7 +101,10 @@ class AuthController extends Controller
     public function logout(Request $request): JsonResponse
     {
         if ($request->bearerToken()) {
-            $request->user()->currentAccessToken()?->delete();
+            $token = $request->user()->currentAccessToken();
+            if ($token instanceof PersonalAccessToken) {
+                $token->delete();
+            }
         }
         if ($request->hasSession()) {
             Auth::guard('web')->logout();

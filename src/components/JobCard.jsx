@@ -20,7 +20,7 @@ function JobCard({ job }) {
             {job.title}
           </Link>}
         </h3>
-        <p className="text-base font-bold text-gray-700 mt-1 flex items-center gap-2">{job.company}{job.verified ? <span className="inline-flex items-center gap-1 rounded-full bg-teal-50 text-brand-teal border border-teal-200 px-2 py-0.5 text-xs font-extrabold" title="Employer verification completed">✓ Verified employer</span> : null}</p>
+        <p className="text-base font-bold text-gray-700 mt-1 flex flex-wrap items-center gap-2">{job.company}{job.verified ? <span className="inline-flex items-center gap-1 rounded-full bg-teal-50 text-brand-teal border border-teal-200 px-2 py-0.5 text-xs font-extrabold" title="Employer account reviewed by PWDWork administrators; workplace accessibility is not independently certified">✓ Reviewed employer</span> : null}</p>
         <p className="text-sm font-semibold text-gray-500 flex items-center gap-1.5 mt-1">
           <span aria-hidden="true">📍</span> {job.location}
         </p>

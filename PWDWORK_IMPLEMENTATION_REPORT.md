@@ -353,3 +353,106 @@ The web editor inherits existing text-size, high-contrast, dark-mode, reduced-mo
 - The focused Phase 5 run then passed in Edge using temporary SQLite/profile and separate local ports: create/save, editor focus, repeated sections, reorder, saved HTML preview, 320px reflow, duplicate, explicit resume selection/consent, authorized employer preview and applicant revocation. No uncaught browser exceptions occurred. A synthetic editor screenshot was also visually inspected.
 - The combined run did not finish Phase 5 on its first attempt: the Windows headless browser did not deliver native keyboard events consistently. The harness now reports that limitation and checks the focused native reorder button's activation as a fallback. Separate early runs also exposed overly broad checkbox selectors and missing waits for asynchronous action controls; selectors and wait conditions were corrected. Chrome sometimes failed before loading any app page; the final focused run used Edge. No claim of a fully native keyboard-only browser pass is made.
 - Final Laravel verification after validation hardening: **84 passed, 892 assertions**. Frontend build/lint, PHP syntax/Pint, browser-script syntax and diff checks passed. PDF extraction/layout verification passed for both eight-page A4 templates. The non-blocking build chunk-size warning and manual accessibility/MySQL staging checks remain documented above.
+
+## Phase 6A — Production readiness and security audit (25 October 2026)
+
+### Outcome and scope
+
+The existing application was audited and hardened locally. No existing MySQL records/schema were changed, no migrations were automatically applied, the local `.env` was not edited or printed, no hosting was provisioned, and no GitHub push or deployment occurred. The deployment plan uses a separate empty database and synthetic staging records; local applicant/employer records and private files must never be copied to a public environment.
+
+The application is **conditionally prepared for private staging validation**, after a patched runtime and approved environment/services are configured. The current local XAMPP configuration is **not ready for public hosting**. Passing tests do not resolve runtime patching, operator policy decisions, real MySQL/TLS/SMTP, backup recovery or manual accessibility checks.
+
+### Findings, severity and disposition
+
+| Finding | Severity / scope | Disposition |
+| --- | --- | --- |
+| Installed PHP 8.2.12 predates critical October 2026 RCE fixes | Critical runtime / hosting blocker | Documented manual runtime upgrade. Production check rejects the unpatched version. PHP reports fixes in 8.2.35, 8.3.36, 8.4.27 and 8.5.12; current patched PHP 8.4 is the proposed staging target. XAMPP was not modified. |
+| General API exceptions could include debug traces, model names or paths outside the earlier request/resume sanitizers | High when debug is exposed | All API exception responses are now minimized. Existing private request/resume messages remain intact; validation, status codes and rate-limit headers are retained. Production exception reporting omits messages, SQL bindings and request context. |
+| Direct `PwdWorkSeeder` invocation bypassed the guard in `DatabaseSeeder` | High production data risk | The demo seeder itself now refuses non-local/non-testing environments before any query/write. No demo seed was run on an existing DB. |
+| Fake support mailbox/phone/TTY/sign-language hotline, SDG Certified badges, unsupported impact totals and employer/accessibility certification wording | High public trust / publication blocker | Removed or replaced with accurate feature descriptions. Support mailbox is optional public build configuration. Privacy/terms dialogs clearly say owner-approved publication is pending. No contact, legal identity or certification was invented. |
+| Private API responses had inconsistent cache headers | Medium privacy | Global API headers set private/no-store, nosniff, no-referrer and SAMEORIGIN, including errors; PDF/preview consent and authorization checks remain unchanged. |
+| Cookie logout with an incidental bearer header attempted to delete Sanctum's transient session token | Medium reliability | Delete only real persisted personal-access tokens, then invalidate the cookie session. Added regression coverage. |
+| Bcrypt byte limit was not validated for long/multibyte passwords | Medium reliability / password correctness | Shared 72-byte validation on register/login/reset/admin provisioning prevents server errors or silent truncation. Existing hashes remain unchanged. |
+| Mail queue commands serialized recovery email / moderation content in plaintext | Medium data minimization | New recovery and moderation mail commands use Laravel queue encryption. Tests push real synthetic database jobs and verify hidden content plus successful decryption. Historical queue records are not rewritten. |
+| No coarse API-wide limiter | Medium abuse/performance | Added a shared 180/minute account/IP limiter alongside existing stricter sensitive-action/PDF/auth limits. Proxy trust and shared production cache remain required. This does not replace infrastructure-level abuse protection. |
+| Local private disk enabled automatic local serving | Low defense in depth | Disabled automatic serving; authorized controller downloads remain functional. Production gate rejects public/served resume storage. No public resume URL was created. |
+| Laravel welcome page exposed framework/runtime details on the API origin root | Low information exposure | Root now returns only minimal app/status JSON. |
+| Main frontend bundle ~504.29 kB minified and eagerly loaded private/admin pages | Performance | Added route-level lazy loading and accessible loading state; final main bundle ~350.65 kB / 109.24 kB gzip. Build no longer reports chunk-size or ineffective dynamic-import warnings. |
+| Navigation header overflow at 320px with 200% base text | Accessibility | Browser test reproduced the issue; logo/action row now wraps and long text reflows. The focused 200%-text/dialog checks pass. |
+
+The PHP finding is based on the [official 21 October security advisory](https://www.php.net/archive/2026.php); it is a native runtime issue that app-level tests cannot repair. The readiness command includes dated release floors and rejects unreviewed branches. Recheck advisories at every release; vendor backports need manual evidence, and a version-floor pass is not a complete security guarantee.
+
+### Security review coverage
+
+- **Authentication:** Sanctum stateful first-party cookie login, regenerated session identifiers, HttpOnly session handling, CSRF-protected writes, password hashing and reset/suspension session/token revocation were inspected. No credentials/tokens were moved to browser storage. Existing personal-token expiry checks remain. MFA and email-verification workflows were not added; assess administrator protection/registration abuse before real-user launch.
+- **Authorization:** Server role middleware, applicant ownership, employer job/company boundaries, admin restrictions, active-actor locking, optimistic versions and immutable-per-save application snapshots were retained. Existing cross-account/company and revoked-share regressions all pass. Admin moderation/audit/report endpoints remain scoped; admins do not gain access to private accommodation threads or personal resume endpoints.
+- **Consent:** Profile accommodation preferences, individual requests and builder resume sharing stay independent. Creating a resume or application does not share a builder resume. Personal edits do not mutate submitted snapshots. Explicit replacement/revocation remains available. Previously viewed/downloaded copies cannot be recalled. The legacy uploaded-profile-resume flow remains separate and must be accurately described in the final privacy notice.
+- **Input/XSS/SQL:** Form Requests and controller validation cap lists/text/JSON/pagination, constrain enums/sorts and use Eloquent bindings. React/Blade escape user content. Resume generation disables remote resources, PHP and PDF JavaScript. A literal SQL-metacharacter regression confirms filters do not become executable SQL. This review is not an external penetration test.
+- **Errors/logs:** HTTP API error responses are safe even with local debug enabled. Production reports record exception class only, preserving private detail minimization at the expense of less diagnosis information; any APM must be separately redacted/reviewed. Worker output, failed-job exception records, stored audit reasons and proxy error logs remain protected personal-data surfaces requiring retention/access policies. No request-body logging was added.
+- **Headers/CSRF/CORS:** Credentialed origins stay exact; proxy trust stays explicit. New templates require HTTPS, secure cookies and production-safe domains. Laravel's CSRF and existing CORS/forged-proxy regressions pass. The application does not disable CSRF or trust all proxy headers. Nginx templates additionally propose HSTS/CSP/permissions headers for real-host staging validation.
+- **Dependencies/runtime:** `composer audit --locked` returned no advisories or abandoned packages; `npm audit` reported zero vulnerabilities. `composer check-platform-reqs` passed locally, including some polyfills; the production command separately checks native extensions. These results do not cover the unpatched PHP binary, OS or MySQL. No dependency versions or paid services were added.
+
+### Database, performance and reliability review
+
+All **15 existing migration files** and associated relationships were inspected; **Phase 6A adds no migration**. Existing additive upgrades preserve records, while destructive down/reset/import commands remain prohibited as a routine upgrade/rollback strategy. Important keys/indexes cover unique user-profile/company relationships, applications and saved jobs, moderation/publication filters, notification histories, complaint fingerprints, request idempotency/events, resume ownership/update order and unique application snapshots. Accommodation/audit/report foreign-key restrictions are intentional. Framework sessions have indexed user identifiers; application logic revokes them on security actions.
+
+Transactions, active-account locking, concurrency versions, idempotency and participant scopes already protect the main mutation workflows and were preserved. Collections are paginated with a 50-record maximum. Job/applicant/admin/request lists use eager-loaded relationships. The Phase 6 query test compares one versus twelve public listings and asserts no per-row query growth and at most eight queries. This guards N+1 behavior; it is not a MySQL execution-plan/load test. Search/ranking still does text comparisons and may need measured full-text/index work at larger scale. PDF rate limits and bounded validated content remain; realistic concurrent memory/time benchmarks are pending.
+
+Production sessions/cache/queues need shared durable database/Redis state; private legacy resume files need persistent private storage. Cloud object storage is optional and would need its adapter/IAM/TLS tests; it was not provisioned. There are no current business-critical scheduled tasks. Recovery and optional moderation email require supervised asynchronous workers. New encrypted commands require a stable shared APP_KEY; neither per-release key regeneration nor silent loss of old queued work is acceptable.
+
+### React, public content and accessibility
+
+Private/admin/detail pages are now lazily loaded without changing route paths or the data-router unsaved-edit blocker. Loading is announced. The existing build, session restoration, offline/retry, errors, pagination, routing, applicant/employer/admin workflows and preference persistence remain covered by tests. Production deep-link refresh and hashed-asset retention are addressed in the Nginx guide; Vite's proxy remains development-only.
+
+The footer now gives actual feature/privacy information with an honest pending-policy/terms status. Unsupported totals were replaced with functional descriptions. Reviewed-employer wording explicitly separates administrator account review from independent workplace accessibility certification. Additional unsupported company-count, automatic/live workflow and accommodation-disclosure marketing statements were corrected. Existing unused prototype pages/assets remain unreferenced by the route table/build rather than being deleted as an unrelated rewrite. All declared runtime dependencies have active uses; no dependency removal was necessary.
+
+Text wrapping, header flex wrapping, a scrollable bounded dialog, explicit loading status and 24px minimum footer/main controls improve reflow and access. Existing text size, dark/high contrast, reduced motion, reading font, cursor and focus systems remain. Browser checks exercise 320px + 200% base text and dialog focus restoration. Native keyboard injection remains unreliable on this Windows headless environment and uses the documented focused native button/form fallback. Manual keyboard-only, NVDA/JAWS/VoiceOver, contrast measurement and full 200–400% browser zoom checks are still required. No WCAG certification or PDF/UA compliance is claimed.
+
+### New and modified files
+
+New files:
+
+- `backend/app/Console/Commands/ProductionCheck.php` — read-only, secret-free configuration gate.
+- `backend/app/Support/ApiSafety.php`, `RuntimeRequirements.php` — response headers and dated PHP security release checks.
+- `backend/app/Http/Middleware/ApiResponseHeaders.php` — API cache/security headers.
+- `backend/app/Rules/PasswordByteLimit.php` — bcrypt byte-length validation.
+- `backend/tests/Feature/PhaseSixTest.php` — 14 security/configuration/performance regressions.
+- `backend/pint.json` — excludes generated cache/storage/vendor code from formatting checks.
+- Root and backend `.env.production.example` — separate public build / private runtime templates with no credentials.
+- `deploy/nginx.conf.example`, `worker.conf.example`, `php.ini.example` — reviewable hosting templates, not activated configuration.
+- `PHASE6-DEPLOYMENT.md` — architecture comparison, beginner deployment/migration/backup/rollback guide, decisions and blockers.
+
+Modified files:
+
+- Backend: `bootstrap/app.php`, `app/Providers/AppServiceProvider.php`, `app/Http/Controllers/AuthController.php`, `PasswordController.php`, `app/Console/Commands/ProvisionAdmin.php`, `app/Jobs/SendPasswordResetLink.php`, `app/Notifications/ModerationDecision.php`, `config/session.php`, `config/filesystems.php`, `routes/web.php`, `database/seeders/PwdWorkSeeder.php`.
+- Frontend: `src/App.jsx`, `src/components/Footer.jsx`, `Navbar.jsx`, `JobCard.jsx`, `Modal.jsx`, `ProtectedRoute.jsx`, `src/components/sections/EmployerCta.jsx`, `HowItWorks.jsx`, `ImpactStats.jsx`, `src/pages/ForEmployersPage.jsx`, `src/index.css`, root `.env.example`.
+- Tooling/report: `scripts/browser-smoke.mjs` and this report.
+
+No existing MySQL migration or package-lock change was needed. Existing local environment secrets and records were not edited. The documented production `.env`/domain examples contain blanks, not real configuration values.
+
+### Executed checks and limits
+
+- Final Laravel run: **98 tests passed, 993 assertions**, including all previous 84 tests and **14 Phase 6 tests / 101 assertions**.
+- `npm run build`: passed; largest/main JavaScript ~350.65 kB minified, no bundle-size warning. `npm run lint`: passed without findings. Browser-script syntax and `git diff --check`: passed.
+- Full backend Pint source check: passed after excluding generated `bootstrap/cache`, `storage` and `vendor`. The first broad invocation found only generated package/service cache formatting; these generated files were not reformatted.
+- PHP syntax check: **99 source/config/test/migration files passed** (generated bootstrap cache excluded).
+- Composer platform requirements passed locally. Read-only Composer/npm registry audits passed with zero reported vulnerabilities/advisories. Initial sandbox registry calls were blocked; permitted read-only registry calls succeeded.
+- `pwdwork:production-check`: deliberately **exit 1** for the local development configuration, including the unpatched PHP runtime and expected local debug/HTTP/cookie/mail/DB/log settings. It prints no values and performs no connection/migration. Static safe-config and secret-output tests pass; runtime advisory checks remain enforced.
+- Browser regression: all Phase 1–5 integration groups passed in the first complete run; the new Phase 6 enlarged-text check then found a genuine navigation overflow. After the header fix, the focused Phase 6 public-content/reflow/dialog/focus group passed. Final all-phase rerun result is recorded below when complete.
+- The first new-test run exposed missing stateful request headers in a validation test and a test teardown that attempted to use a synthetic MySQL configuration rather than restoring SQLite. That attempted connection was rejected; no records were written. The tests now restore their SQLite context and assert the production check never opens a connection. The queue encryption test was adjusted to push real synthetic SQLite jobs instead of calling Laravel's protected payload method. All final tests pass.
+
+No real-host HTTPS/CSP, MySQL concurrency/DDL, SMTP provider delivery, external storage, backup/restore drill, Linux server template execution, manual screen-reader audit or external penetration/load test was performed. The existing PDF/consent security regressions passed; standalone eight-page PDF inspection was not repeated during Phase 6 because the document renderer/templates were unchanged.
+
+### Recommended next actions
+
+See `PHASE6-DEPLOYMENT.md` for exact commands and the beginner sequence. Approve a hosting plan/region/domain and recurring budget; use a patched supported runtime; create an isolated new staging DB and persistent storage; supply real HTTPS/cookie/CORS/Sanctum/mail/log settings; validate the server/worker templates and migration SQL; restore-test backups; and run synthetic-data staging journeys. Public launch also needs approved operator identity, monitored support, privacy/terms, retention/rights handling, administrator safeguards and manual accessibility checks. No hosting provider has been selected or purchased. Source/release rollback is separate from destructive database rollback; forward fixes and explicitly approved replacement-target restoration are the documented strategy.
+
+### Phase 6A final verification
+
+The final full Edge browser run **passed all twelve Phase 1–6 groups against built production assets**, using `PWDWORK_SMOKE_PRODUCTION=1`, a test-only local preview/API proxy, and temporary SQLite/browser fixtures. It covered search/authentication/application/employer/admin/report/recommendation workflows, actual queued reset-email processing with the new encrypted command, accommodation privacy/transitions/revocation, resume editing/sharing/employer preview/revocation, audited public content, 320px + 200% text reflow, bounded scrollable dialogs and focus restoration. No uncaught browser exceptions occurred. The native-keyboard fallback limitation remains as documented.
+
+A prior development-server rerun timed out during login; the final run intentionally used built assets, avoiding possible hot-reload interference and exercising production route chunks. The first full run had already passed Phases 1–5 before the newly introduced accessibility assertion found the now-fixed header overflow. No browser failure remains unresolved in the final production-asset run.
+
+Route-cache generation/list loading/cleanup passed with **71 cached routes**, using an isolated temporary cache file; the normal route cache was not modified. The initial Windows absolute temporary path was interpreted as relative by Laravel, so the successful verification used a project-relative cache path. No config cache containing local secrets was generated. Root/ backend production environment dotfiles are now ignored by Git, while safe example files and the existing deterministic test configuration remain available.
+
+Final readiness assessment remains conditional: the code/test baseline is ready for the next **private staging** preparation step, but **the existing PHP 8.2.12/runtime environment is not approved for public exposure**. No migrations, hosting, external infrastructure changes, deployment, purchase or push were performed. The file inventory also includes `.gitignore` changes protecting future environment files. Follow `PHASE6-DEPLOYMENT.md` for the separate approved environment, upgrade, backup/restore, policies and verification work.

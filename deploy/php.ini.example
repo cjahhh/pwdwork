@@ -1,0 +1,14 @@
+; Apply to the actual PHP-FPM/server ini, not Laravel .env. Template only.
+; Use a patched PHP release first. These options do not replace security updates.
+expose_php = Off
+display_errors = Off
+display_startup_errors = Off
+log_errors = On
+session.upload_progress.enabled = 0
+memory_limit = 256M
+max_execution_time = 60
+post_max_size = 1M
+upload_max_filesize = 512K
+max_input_vars = 1000
+; OPcache is recommended. Validate deployment invalidation/reload behavior in staging.
+opcache.enable = 1

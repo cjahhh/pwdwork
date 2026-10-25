@@ -8,7 +8,7 @@ function ProtectedRoute({ children, allowedRoles }) {
   if (!ready) {
     return (
       <main className="bg-brand-gray-bg py-16">
-        <p className="text-center font-bold text-brand-blue">Loading account...</p>
+        <p role="status" className="text-center font-bold text-brand-blue">Loading account...</p>
       </main>
     );
   }

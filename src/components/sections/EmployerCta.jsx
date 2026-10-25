@@ -16,8 +16,8 @@ function EmployerCta() {
               Are you an inclusive employer?
             </h2>
             <p className="text-blue-100 text-lg sm:text-xl font-medium leading-relaxed">
-              Join hundreds of forward-thinking companies building diverse, high-performing workplaces. Post your open
-              positions with verified accessibility features and recruit top PWD talent seamlessly.
+              Help build inclusive workplaces. Post your open
+              positions with clearly described, employer-reported accessibility features and connect with applicants.
             </p>
             <div className="pt-4 flex flex-col sm:flex-row items-stretch sm:items-center gap-4">
               <Link

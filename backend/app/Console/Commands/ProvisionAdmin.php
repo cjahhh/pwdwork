@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Models\AdminAuditLog;
 use App\Models\User;
+use App\Rules\PasswordByteLimit;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
@@ -31,7 +32,7 @@ class ProvisionAdmin extends Command
         $confirmation = $this->secret('Confirm password');
         $validation = Validator::make(['email' => $email, 'name' => $name, 'password' => $password, 'password_confirmation' => $confirmation], [
             'email' => ['required', 'email', 'max:255', 'unique:users,email'], 'name' => ['required', 'string', 'max:255'],
-            'password' => ['required', 'confirmed', Password::min(12)->mixedCase()->numbers()],
+            'password' => ['required', 'confirmed', Password::min(12)->mixedCase()->numbers(), new PasswordByteLimit],
         ]);
         if ($validation->fails()) {
             foreach ($validation->errors()->all() as $message) {

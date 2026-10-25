@@ -32,8 +32,8 @@ function HowItWorks() {
             </div>
             <h3 className="text-2xl font-black text-brand-dark mb-3">Create Your Profile</h3>
             <p className="text-gray-600 text-base leading-relaxed">
-              Showcase your skills, work experience, and specify your exact accommodation needs (e.g. screen reader
-              support, accessible transport, flexible hours) with total privacy control.
+              Add your skills and optional experience. Choose whether to share standardized profile accommodation
+              preferences for each application, and discuss practical arrangements separately.
             </p>
           </article>
 
@@ -53,8 +53,8 @@ function HowItWorks() {
             </div>
             <h3 className="text-2xl font-black text-brand-dark mb-3">Search and Apply</h3>
             <p className="text-gray-600 text-base leading-relaxed">
-              Browse job postings with 100% transparent accessibility badges. Submit one-click accessible applications
-              directly to certified inclusive employers.
+              Browse published jobs with employer-reported accessibility information. Apply to employers
+              whose accounts have been reviewed by PWDWork administrators.
             </p>
           </article>
 
@@ -74,8 +74,8 @@ function HowItWorks() {
             </div>
             <h3 className="text-2xl font-black text-brand-dark mb-3">Track Your Application</h3>
             <p className="text-gray-600 text-base leading-relaxed">
-              Receive live status notifications, schedule accessible virtual or onsite interviews, and coordinate
-              accommodations directly with responsive hiring managers.
+              Check application status and in-app notifications. Employers can schedule interviews, and you can
+              discuss practical arrangements with the hiring team.
             </p>
           </article>
         </div>

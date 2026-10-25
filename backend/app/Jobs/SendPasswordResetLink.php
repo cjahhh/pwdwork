@@ -2,11 +2,12 @@
 
 namespace App\Jobs;
 
+use Illuminate\Contracts\Queue\ShouldBeEncrypted;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Password;
 
-class SendPasswordResetLink implements ShouldQueue
+class SendPasswordResetLink implements ShouldBeEncrypted, ShouldQueue
 {
     use Queueable;
 

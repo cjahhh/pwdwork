@@ -1,0 +1,16 @@
+# Supervisor template. Replace placeholders before use; run as a non-root application user.
+[program:pwdwork-worker]
+command=${PWDWORK_PHP_BINARY} ${PWDWORK_RELEASE}/backend/artisan queue:work database --queue=password-resets,notifications,default --sleep=3 --tries=3 --timeout=60 --max-time=3600
+directory=${PWDWORK_RELEASE}/backend
+user=${PWDWORK_APPLICATION_USER}
+autostart=true
+autorestart=true
+stopasgroup=true
+killasgroup=true
+stopwaitsecs=90
+redirect_stderr=true
+stdout_logfile=${PWDWORK_PRIVATE_LOG_DIRECTORY}/worker.log
+stdout_logfile_maxbytes=5MB
+stdout_logfile_backups=3
+# Worker output and failed_jobs can contain personal data and reset-mail diagnostics.
+# Restrict log/DB access and retention; do not publish them or copy them into bug reports.

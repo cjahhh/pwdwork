@@ -4,27 +4,27 @@ import ProtectedRoute from "./components/ProtectedRoute.jsx";
 import RecommendationsPage from "./pages/RecommendationsPage.jsx";
 import HomePage from "./pages/HomePage.jsx";
 import FindJobsPage from "./pages/FindJobsPage.jsx";
-import JobDetailsPage from "./pages/JobDetailsPage.jsx";
-import ForEmployersPage from "./pages/ForEmployersPage.jsx";
-import AboutPage from "./pages/AboutPage.jsx";
-import LoginPage from "./pages/LoginPage.jsx";
-import RegisterPage from "./pages/RegisterPage.jsx";
-import PasswordRecoveryPage from "./pages/PasswordRecoveryPage.jsx";
-import ForgotPasswordPage from "./pages/ForgotPasswordPage.jsx";
-import AccommodationRequestsPage from "./pages/AccommodationRequestsPage.jsx";
-import ApplicantProfilePage from "./pages/ApplicantProfilePage.jsx";
-import ApplicantApplicationsEnhancedPage from "./pages/ApplicantApplicationsEnhancedPage.jsx";
-import ApplicantSavedJobsPage from "./pages/ApplicantSavedJobsPage.jsx";
-import EmployerProfilePage from "./pages/EmployerProfilePage.jsx";
-import EmployerListingsEnhancedPage from "./pages/EmployerListingsEnhancedPage.jsx";
-import EmployerApplicantsEnhancedPage from "./pages/EmployerApplicantsEnhancedPage.jsx";
-import AdminDashboardPage from "./pages/AdminDashboardPage.jsx";
-import AdminLayout from "./pages/admin/AdminLayout.jsx";
-import AdminQueuePage from "./pages/admin/AdminQueuePage.jsx";
-import AdminAuditPage from "./pages/admin/AdminAuditPage.jsx";
-import ReportsPage from "./pages/ReportsPage.jsx";
-import NotificationsPage from "./pages/NotificationsPage.jsx";
-import NotFoundPage from "./pages/NotFoundPage.jsx";
+const JobDetailsPage = lazy(() => import("./pages/JobDetailsPage.jsx"));
+const ForEmployersPage = lazy(() => import("./pages/ForEmployersPage.jsx"));
+const AboutPage = lazy(() => import("./pages/AboutPage.jsx"));
+const LoginPage = lazy(() => import("./pages/LoginPage.jsx"));
+const RegisterPage = lazy(() => import("./pages/RegisterPage.jsx"));
+const PasswordRecoveryPage = lazy(() => import("./pages/PasswordRecoveryPage.jsx"));
+const ForgotPasswordPage = lazy(() => import("./pages/ForgotPasswordPage.jsx"));
+const AccommodationRequestsPage = lazy(() => import("./pages/AccommodationRequestsPage.jsx"));
+const ApplicantProfilePage = lazy(() => import("./pages/ApplicantProfilePage.jsx"));
+const ApplicantApplicationsEnhancedPage = lazy(() => import("./pages/ApplicantApplicationsEnhancedPage.jsx"));
+const ApplicantSavedJobsPage = lazy(() => import("./pages/ApplicantSavedJobsPage.jsx"));
+const EmployerProfilePage = lazy(() => import("./pages/EmployerProfilePage.jsx"));
+const EmployerListingsEnhancedPage = lazy(() => import("./pages/EmployerListingsEnhancedPage.jsx"));
+const EmployerApplicantsEnhancedPage = lazy(() => import("./pages/EmployerApplicantsEnhancedPage.jsx"));
+const AdminDashboardPage = lazy(() => import("./pages/AdminDashboardPage.jsx"));
+const AdminLayout = lazy(() => import("./pages/admin/AdminLayout.jsx"));
+const AdminQueuePage = lazy(() => import("./pages/admin/AdminQueuePage.jsx"));
+const AdminAuditPage = lazy(() => import("./pages/admin/AdminAuditPage.jsx"));
+const ReportsPage = lazy(() => import("./pages/ReportsPage.jsx"));
+const NotificationsPage = lazy(() => import("./pages/NotificationsPage.jsx"));
+const NotFoundPage = lazy(() => import("./pages/NotFoundPage.jsx"));
 import { lazy, Suspense } from 'react';
 const ResumesPage = lazy(() => import('./pages/ResumesPage.jsx'));
 
@@ -34,7 +34,7 @@ const ResumesPage = lazy(() => import('./pages/ResumesPage.jsx'));
  */
 function App() {
   return (
-    <Routes>
+    <Suspense fallback={<main className="page-shell"><p role="status">Loading page…</p></main>}><Routes>
       <Route element={<Layout />}>
         <Route path="/" element={<HomePage />} />
         <Route path="/jobs" element={<FindJobsPage />} />
@@ -92,7 +92,7 @@ function App() {
 
         <Route path="*" element={<NotFoundPage />} />
       </Route>
-    </Routes>
+    </Routes></Suspense>
   );
 }
 

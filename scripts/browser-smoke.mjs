@@ -30,12 +30,14 @@ const frontendPort = Number(process.env.PWDWORK_SMOKE_FRONTEND_PORT || 5173);
 const browserPort = Number(process.env.PWDWORK_SMOKE_BROWSER_PORT || 9222);
 for (const port of [apiPort, frontendPort, browserPort]) assert.ok(Number.isInteger(port) && port > 1024 && port <= 65535, "Invalid smoke test port");
 const frontendOrigin = `http://localhost:${frontendPort}`;
+const productionAssets = process.env.PWDWORK_SMOKE_PRODUCTION === '1';
+if (productionAssets) assert.ok(existsSync(join(root, 'dist/index.html')), 'Run npm run build before testing production assets.');
 env.APP_URL = `http://localhost:${apiPort}`;
 env.FRONTEND_URL = frontendOrigin;
 env.CORS_ALLOWED_ORIGINS = frontendOrigin;
 env.SANCTUM_STATEFUL_DOMAINS = `localhost:${frontendPort},localhost:${apiPort}`;
 const viteTestConfig = join(temp, 'vite.config.mjs');
-writeFileSync(viteTestConfig, `import config from ${JSON.stringify(pathToFileURL(join(root, 'vite.config.js')).href)};\nexport default { ...config, server: { ...config.server, proxy: { '/api': { target: 'http://127.0.0.1:${apiPort}', changeOrigin: true } } } };\n`);
+writeFileSync(viteTestConfig, `import config from ${JSON.stringify(pathToFileURL(join(root, 'vite.config.js')).href)};\nconst proxy = { '/api': { target: 'http://127.0.0.1:${apiPort}', changeOrigin: true } };\nexport default { ...config, server: { ...config.server, proxy }, preview: { ...config.preview, proxy } };\n`);
 const processes = [];
 let client;
 const logs = [];
@@ -164,7 +166,7 @@ try {
   const fixture = spawnSync("php", ["tests/browser-fixture.php"], { cwd: backend, env, encoding: "utf8", windowsHide: true });
   assert.equal(fixture.status, 0, fixture.stderr || fixture.stdout);
   launch("php", ["-S", `127.0.0.1:${apiPort}`, join(backend, "vendor/laravel/framework/src/Illuminate/Foundation/resources/server.php")], join(backend, "public"));
-  launch(process.execPath, [join(root, "node_modules/vite/bin/vite.js"), "--host", "localhost", "--port", String(frontendPort), "--strictPort", "--config", viteTestConfig], root,
+  launch(process.execPath, [join(root, "node_modules/vite/bin/vite.js"), ...(productionAssets ? ['preview'] : []), "--host", "localhost", "--port", String(frontendPort), "--strictPort", "--config", viteTestConfig], root,
     { ...process.env, VITE_API_URL: "/api" });
   await waitFor(async () => (await fetch(frontendOrigin + "/api/health")).ok, "Vite/API startup");
   const browser = process.env.BROWSER_PATH || [
@@ -183,7 +185,7 @@ try {
   await client.send("Runtime.enable");
   await client.send("Network.enable");
 
-  if (!process.env.PWDWORK_SMOKE_PHASE4_ONLY && !process.env.PWDWORK_SMOKE_PHASE5_ONLY) {
+  if (!process.env.PWDWORK_SMOKE_PHASE4_ONLY && !process.env.PWDWORK_SMOKE_PHASE5_ONLY && !process.env.PWDWORK_SMOKE_PHASE6_ONLY) {
   await go("/jobs");
   await check("document.body.innerText.includes('27 matching jobs')", "job results");
   await click("Next page", 'nav[aria-label="Job search pages"]');
@@ -414,7 +416,7 @@ try {
     await login("candidate@browser.example");
   }
 
-  if (!process.env.PWDWORK_SMOKE_PHASE5_ONLY) {
+  if (!process.env.PWDWORK_SMOKE_PHASE5_ONLY && !process.env.PWDWORK_SMOKE_PHASE6_ONLY) {
   await client.send("Emulation.clearDeviceMetricsOverride");
   await go('/applicant/applications');
   await check("!!document.querySelector('main a[href*=\"/accommodation-requests/new?application_id=\"]')", 'application accommodation link');
@@ -519,6 +521,7 @@ try {
   passed('Phase 4 intentional sharing, native submission and focus, private escaped messages, edit history, employer proposal, explicit acceptance, interview integration, mobile layout and withdrawal revocation');
   await logout(); await login('candidate@browser.example');
   }
+  if (!process.env.PWDWORK_SMOKE_PHASE6_ONLY) {
   await go('/applicant/resumes');
   await check("document.body.innerText.includes('Create Resume')", 'resume dashboard');
   await click('Create Resume');
@@ -570,6 +573,26 @@ try {
   await check("document.body.innerText.includes('Future access revoked.')", 'resume access revoked');
   assert.deepEqual(client.exceptions, [], 'Uncaught Phase 5 browser exceptions');
   passed('Phase 5 resume creation, saved preview, keyboard reorder, mobile editor, duplication, explicit application share, employer preview and revocation');
+  }
+  await go('/about');
+  await check("document.body.innerText.includes('What you can do on PWDWork')", 'audited public content');
+  assert.equal(await client.evaluate("/SDG [0-9]+ Certified|555-PWD1|support@pwdwork.org|Sign Language Hotline Available|1,200\\+|5,400\\+|860\\+/.test(document.body.innerText)"), false, 'No unsupported impact/certification/support claims');
+  await client.send('Emulation.setDeviceMetricsOverride', { width: 320, height: 800, deviceScaleFactor: 1, mobile: false });
+  await client.evaluate("document.documentElement.style.fontSize = '32px'");
+  if (!await client.evaluate('document.documentElement.scrollWidth <= 320')) {
+    console.log('Overflow diagnostics: ' + JSON.stringify(await client.evaluate("[...document.querySelectorAll('body *')].filter(el => { const r=el.getBoundingClientRect(); return r.width && r.right > 321; }).map(el => ({ tag: el.tagName, class: el.className, right: el.getBoundingClientRect().right, text: el.textContent.slice(0, 35) })).slice(-15)")));
+  }
+  writeFileSync(join(backend, 'storage/framework/cache/phase6-large-text.png'), Buffer.from((await client.send('Page.captureScreenshot', { format: 'png' })).data, 'base64'));
+  assert.ok(await client.evaluate('document.documentElement.scrollWidth <= 320'), 'Public content reflows at 320px with 200% base text');
+  await click('Privacy information (policy pending)', 'footer');
+  await check("!!document.querySelector('dialog[open]') && document.querySelector('dialog[open]').contains(document.activeElement)", 'policy-information dialog receives focus');
+  assert.ok(await client.evaluate("document.querySelector('dialog[open]').scrollHeight > 0 && getComputedStyle(document.querySelector('dialog[open]')).overflowY === 'auto'"), 'Long dialog can scroll at large text');
+  await click('Close dialog', 'dialog[open]');
+  await check("!document.querySelector('dialog[open]') && document.activeElement?.textContent === 'Privacy information (policy pending)'", 'dialog restores focus');
+  await client.evaluate("document.documentElement.style.fontSize = ''");
+  await client.send('Emulation.clearDeviceMetricsOverride');
+  assert.deepEqual(client.exceptions, [], 'Uncaught Phase 6 browser exceptions');
+  passed('Phase 6 truthful public content, 200% text with 320px reflow, scrollable policy-information dialog and focus restoration');
   console.log("Browser smoke checks passed. Only isolated temporary SQLite fixtures were used.");
 } catch (error) {
   if (client) {
