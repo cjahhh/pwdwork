@@ -8,6 +8,7 @@ use App\Models\AdminAuditLog;
 use App\Models\Application;
 use App\Models\JobListing;
 use App\Models\User;
+use App\Models\UserNotification;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -233,7 +234,23 @@ class JobListingController extends Controller
             abort_unless($owner->status === 'active', 403);
             $record = Application::whereKey($application->id)->lockForUpdate()->firstOrFail();
             abort_unless($record->jobListing->employer->user_id === $owner->id, 403);
-            $record->update($data);
+            $record->fill($data);
+            // MySQL TIME values include seconds; identical H:i retries must not create notices.
+            $interviewChanged = $record->status === 'interview' && (
+                $record->isDirty(['status', 'interview_date', 'interview_notes'])
+                || substr((string) $record->getRawOriginal('interview_time'), 0, 5) !== substr((string) $record->interview_time, 0, 5)
+            );
+            $wasInterview = $record->getRawOriginal('status') === 'interview';
+            $record->save();
+            if ($interviewChanged) {
+                // In-app delivery is atomic with scheduling and needs no queue worker.
+                UserNotification::create([
+                    'user_id' => $record->user_id,
+                    'title' => $wasInterview ? 'Interview updated' : 'Interview scheduled',
+                    'body' => 'Your interview schedule has an update. View your applications for the current schedule and details.',
+                    'action_url' => '/applicant/applications',
+                ]);
+            }
         }, 3);
 
         return response()->json(['application' => $this->employerApplicationPayload($application->fresh(['user.applicantProfile.accommodations', 'jobListing', ...Application::confirmedRequestRelations(), ...Application::resumeRelations()]))]);
