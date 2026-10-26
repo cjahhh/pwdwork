@@ -4,6 +4,9 @@ return [
     // Resumes stay private; an authorized controller streams downloads.
     'resume_disk' => env('RESUME_DISK', 'local'),
 
+    // Temporary operator opt-in; never enabled by an HTTP request.
+    'connectivity_test_enabled' => env('PWDWORK_STORAGE_TEST', false),
+
     /*
     |--------------------------------------------------------------------------
     | Default Filesystem Disk

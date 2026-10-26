@@ -1,6 +1,6 @@
 user www-data;
 worker_processes 1;
-pid /tmp/nginx/nginx.pid;
+pid /tmp/nginx.pid;
 # Nginx error messages can include entire request URLs. Do not collect those.
 error_log /dev/stderr crit;
 events { worker_connections 512; }

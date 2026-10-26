@@ -38,6 +38,7 @@
 !deploy/docker/entrypoint.sh
 !deploy/docker/run-services.sh
 !deploy/docker/check-environment.php
+!deploy/docker/storage-connectivity-test.php
 # These final exclusions also apply inside otherwise allowed directories.
 **/.env
 **/.env.*

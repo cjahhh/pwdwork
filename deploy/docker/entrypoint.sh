@@ -51,4 +51,10 @@ chmod -R 750 /tmp/nginx
 envsubst '${PORT}' < /etc/nginx/nginx.conf.template > /etc/nginx/nginx.conf
 nginx -t
 php-fpm -t
+
+# Temporary, exact opt-in. Run once per container as the application user in the
+# background: a failed/unavailable storage provider must not delay or block startup.
+if [ "${PWDWORK_STORAGE_TEST:-false}" = 'true' ]; then
+    runuser -u www-data -- php -d display_errors=0 -d log_errors=0 /opt/pwdwork/storage-connectivity-test.php 2>/dev/null &
+fi
 exec "$@"

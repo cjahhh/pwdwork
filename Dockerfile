@@ -54,7 +54,7 @@ COPY deploy/docker/php.ini /usr/local/etc/php/conf.d/zz-pwdwork.ini
 COPY deploy/docker/php-fpm.conf /usr/local/etc/php-fpm.d/zz-pwdwork.conf
 COPY deploy/docker/nginx.conf.template /etc/nginx/nginx.conf.template
 COPY deploy/docker/fastcgi-app.conf /opt/pwdwork/fastcgi-app.conf.template
-COPY deploy/docker/entrypoint.sh deploy/docker/run-services.sh deploy/docker/check-environment.php /opt/pwdwork/
+COPY deploy/docker/entrypoint.sh deploy/docker/run-services.sh deploy/docker/check-environment.php deploy/docker/storage-connectivity-test.php /opt/pwdwork/
 RUN mkdir -p storage/app/private storage/fonts /tmp/nginx/client /tmp/nginx/fastcgi /tmp/nginx/proxy /tmp/nginx/uwsgi /tmp/nginx/scgi \
     && chown -R www-data:www-data storage bootstrap/cache /tmp/nginx \
     && chmod -R u=rwX,g=rX,o= storage bootstrap/cache \
