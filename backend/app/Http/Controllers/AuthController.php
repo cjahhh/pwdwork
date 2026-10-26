@@ -76,6 +76,12 @@ class AuthController extends Controller
 
         $user = User::query()->where('email', $credentials['email'])->first();
 
+        if (! $user) {
+            // Match the configured password-hashing work for an unknown email.
+            // Discard the result; never store or log submitted credentials.
+            Hash::make($credentials['password']);
+        }
+
         if (! $user || ! Hash::check($credentials['password'], $user->password)) {
             throw ValidationException::withMessages([
                 'email' => ['Those credentials do not match our records.'],

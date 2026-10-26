@@ -25,7 +25,7 @@ Route::get('/health', function () {
 });
 
 Route::post('/register', [AuthController::class, 'register'])->middleware('throttle:registration');
-Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:10,1');
+Route::post('/login', [AuthController::class, 'login'])->middleware(['throttle:10,1', 'throttle:login-account']);
 Route::post('/forgot-password', [PasswordController::class, 'forgot'])->middleware('throttle:password-email');
 Route::post('/reset-password', [PasswordController::class, 'reset'])->middleware('throttle:password-reset');
 Route::get('/jobs', [JobListingController::class, 'index']);
