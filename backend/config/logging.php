@@ -52,6 +52,15 @@ return [
 
     'channels' => [
 
+        // Fixed stage/category/status fields only; visible even when general logs filter info.
+        'password_recovery' => [
+            'driver' => 'monolog',
+            'level' => 'info',
+            'handler' => StreamHandler::class,
+            'handler_with' => ['stream' => 'php://stderr'],
+            'processors' => [],
+        ],
+
         'stack' => [
             'driver' => 'stack',
             'channels' => explode(',', (string) env('LOG_STACK', 'single')),

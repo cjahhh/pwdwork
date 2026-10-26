@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Mail\PasswordResetEmail;
+use App\Support\PasswordRecoveryDiagnostics;
 use RuntimeException;
 
 class PasswordRecoveryMail
@@ -56,10 +57,14 @@ class PasswordRecoveryMail
 
     public function message($user, #[\SensitiveParameter] string $token): PasswordResetEmail
     {
+        PasswordRecoveryDiagnostics::record('notification_started');
         $url = $this->url($user, $token);
 
-        return (new PasswordResetEmail($url, (int) config('auth.passwords.'.config('auth.defaults.passwords').'.expire')))
+        $message = (new PasswordResetEmail($url, (int) config('auth.passwords.'.config('auth.defaults.passwords').'.expire')))
             ->mailer($this->mailer())
             ->to($user->getEmailForPasswordReset());
+        PasswordRecoveryDiagnostics::record('notification_ready');
+
+        return $message;
     }
 }

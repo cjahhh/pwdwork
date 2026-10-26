@@ -5,11 +5,11 @@ namespace App\Http\Controllers;
 use App\Jobs\SendPasswordResetLink;
 use App\Rules\PasswordByteLimit;
 use App\Services\PasswordRecoveryMail;
+use App\Support\PasswordRecoveryDiagnostics;
 use Illuminate\Auth\Events\PasswordReset;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Str;
 
@@ -23,11 +23,10 @@ class PasswordController extends Controller
             SendPasswordResetLink::dispatch($data['email'])
                 ->onConnection($connection)
                 ->onQueue(config('queue.password_reset_queue'));
-        } catch (\Throwable $e) {
-    Log::error('Password recovery dispatch failed.', [
-        'exception_type' => get_class($e),
-        'queue_connection' => config('queue.password_reset_connection'),
-    ]);
+            PasswordRecoveryDiagnostics::record('dispatch_accepted');
+        } catch (\Throwable) {
+            PasswordRecoveryDiagnostics::record('dispatch_failed', 'dispatch');
+
             return response()->json(['message' => 'Password recovery is temporarily unavailable. Please try again later.'], 503);
         }
 
