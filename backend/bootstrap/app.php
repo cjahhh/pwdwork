@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Middleware\ApiResponseHeaders;
+use App\Http\Middleware\EnsureEmailOwnership;
 use App\Http\Middleware\EnsureUserRole;
 use App\Support\ApiSafety;
 use App\Support\DatabaseFailureDiagnostics;
@@ -32,6 +33,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->throttleApi('api');
         $middleware->alias([
             'role' => EnsureUserRole::class,
+            'email.ownership' => EnsureEmailOwnership::class,
         ]);
 
         $middleware->redirectGuestsTo(function (Request $request) {
@@ -43,6 +45,7 @@ return Application::configure(basePath: dirname(__DIR__))
         });
     })
     ->withExceptions(function (Exceptions $exceptions): void {
+        $exceptions->dontFlash(['proof']);
         // Production logs deliberately exclude exception messages/SQL bindings and request data.
         $exceptions->report(function (Throwable $exception) {
             if (app()->environment('production')) {

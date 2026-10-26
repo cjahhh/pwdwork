@@ -3,6 +3,7 @@
 use App\Http\Controllers\AccommodationRequestController;
 use App\Http\Controllers\AdminController;
 use App\Http\Controllers\AuthController;
+use App\Http\Controllers\EmailVerificationController;
 use App\Http\Controllers\JobListingController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\PasswordController;
@@ -32,6 +33,15 @@ Route::get('/jobs', [JobListingController::class, 'index']);
 Route::get('/jobs/{jobListing}', [JobListingController::class, 'show']);
 
 Route::middleware(['auth:sanctum', 'role:applicant,employer,admin'])->group(function () {
+    Route::get('/user', [AuthController::class, 'me']);
+    Route::post('/logout', [AuthController::class, 'logout']);
+    Route::get('/email/verification', [EmailVerificationController::class, 'status']);
+    Route::post('/email/verification/resend', [EmailVerificationController::class, 'resend'])->middleware('throttle:verification-resend');
+    Route::post('/email/verification/confirm', [EmailVerificationController::class, 'confirm'])
+        ->middleware('throttle:verification-confirm')->name('verification.confirm');
+});
+
+Route::middleware(['auth:sanctum', 'role:applicant,employer,admin', 'email.ownership'])->group(function () {
     Route::middleware(EnsureResumesReady::class)->group(function () {
         Route::prefix('applicant/resumes')->middleware(['role:applicant', 'throttle:60,1'])->controller(ResumeController::class)->group(function () {
             Route::get('/', 'index');
@@ -99,8 +109,6 @@ Route::middleware(['auth:sanctum', 'role:applicant,employer,admin'])->group(func
     Route::get('/applicant/saved-jobs/{jobListing}', [JobListingController::class, 'savedState'])->middleware('role:applicant');
     Route::put('/applicant/saved-jobs/{jobListing}', [JobListingController::class, 'saveJob'])->middleware('role:applicant');
     Route::delete('/applicant/saved-jobs/{jobListing}', [JobListingController::class, 'unsaveJob'])->middleware('role:applicant');
-    Route::get('/user', [AuthController::class, 'me']);
-    Route::post('/logout', [AuthController::class, 'logout']);
     Route::get('/employer/jobs', [JobListingController::class, 'employerListings'])->middleware('role:employer');
     Route::post('/employer/jobs', [JobListingController::class, 'store'])->middleware('role:employer');
     Route::patch('/employer/jobs/{jobListing}', [JobListingController::class, 'update'])->middleware('role:employer');

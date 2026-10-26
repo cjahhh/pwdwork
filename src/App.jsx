@@ -9,6 +9,7 @@ const ForEmployersPage = lazy(() => import("./pages/ForEmployersPage.jsx"));
 const AboutPage = lazy(() => import("./pages/AboutPage.jsx"));
 const LoginPage = lazy(() => import("./pages/LoginPage.jsx"));
 const RegisterPage = lazy(() => import("./pages/RegisterPage.jsx"));
+const VerifyEmailPage = lazy(() => import("./pages/VerifyEmailPage.jsx"));
 const PasswordRecoveryPage = lazy(() => import("./pages/PasswordRecoveryPage.jsx"));
 const ForgotPasswordPage = lazy(() => import("./pages/ForgotPasswordPage.jsx"));
 const AccommodationRequestsPage = lazy(() => import("./pages/AccommodationRequestsPage.jsx"));
@@ -45,6 +46,7 @@ function App() {
         <Route path="/about" element={<AboutPage />} />
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
+        <Route path="/verify-email" element={<VerifyEmailPage />} />
         <Route path="/reset-password" element={<PasswordRecoveryPage reset />} />
         <Route path="/forgot-password" element={<ForgotPasswordPage />} />
 

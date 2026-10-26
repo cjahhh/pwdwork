@@ -3,7 +3,7 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
 import { useUi } from "../context/UiContext.jsx";
 import { apiErrorMessage } from "../services/api.js";
-import { dashboardPath } from "../services/auth.js";
+import { accountPath } from "../services/auth.js";
 import AuthLayout from "../components/AuthLayout.jsx";
 
 function RegisterPage() {
@@ -34,7 +34,7 @@ function RegisterPage() {
         company_name: role === "employer" ? companyName : undefined,
       });
       showToast("Account created", `Welcome to PWDWork, ${user.name}.`);
-      navigate(dashboardPath(user.role), { replace: true });
+      navigate(accountPath(user), { replace: true });
     } catch (err) {
       setError(apiErrorMessage(err, "Could not create the account."));
     } finally {

@@ -40,6 +40,11 @@ class AppServiceProvider extends ServiceProvider
         RateLimiter::for('reports', fn (Request $request) => Limit::perMinute(5)->by('reports:'.$request->user()->id));
         RateLimiter::for('password-email', fn (Request $request) => Limit::perMinute(5)->by('password-email:'.$request->ip()));
         RateLimiter::for('password-reset', fn (Request $request) => Limit::perMinute(10)->by('password-reset:'.$request->ip()));
+        RateLimiter::for('verification-resend', fn (Request $request) => [
+            Limit::perMinute(6)->by('verification-resend-minute:'.$request->ip()),
+            Limit::perHour(30)->by('verification-resend-hour:'.$request->ip()),
+        ]);
+        RateLimiter::for('verification-confirm', fn (Request $request) => Limit::perMinute(10)->by('verification-confirm:'.$request->user()->id));
         Mail::extend('brevo', fn (array $config = []) => new BrevoTransport((string) config('services.brevo.key')));
         ResetPassword::createUrlUsing(fn ($user, $token) => app(PasswordRecoveryMail::class)->url($user, $token));
         ResetPassword::toMailUsing(fn ($user, $token) => app(PasswordRecoveryMail::class)->message($user, $token));

@@ -42,7 +42,9 @@ export function AuthProvider({ children }) {
       setError("");
       setNotice(event.detail?.message || "Your session has expired. Please sign in again.");
     };
+    const verificationRequired = () => restore();
     window.addEventListener("pwdwork:unauthorized", expired);
+    window.addEventListener("pwdwork:verification-required", verificationRequired);
     if (window.BroadcastChannel) {
       channel.current = new BroadcastChannel("pwdwork-session");
       channel.current.onmessage = () => restore();
@@ -50,6 +52,7 @@ export function AuthProvider({ children }) {
     Promise.resolve().then(restore);
     return () => {
       window.removeEventListener("pwdwork:unauthorized", expired);
+      window.removeEventListener("pwdwork:verification-required", verificationRequired);
       channel.current?.close();
     };
   }, [restore]);
@@ -60,6 +63,12 @@ export function AuthProvider({ children }) {
       error,
       notice,
       retry: restore,
+      async refreshUser() {
+        const current = await fetchCurrentUser();
+        setUser(current);
+        channel.current?.postMessage("changed");
+        return current;
+      },
       async login(payload) {
         const data = await loginAccount(payload);
         setError("");

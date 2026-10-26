@@ -3,6 +3,7 @@ import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useUi } from '../context/UiContext.jsx';
 import { apiErrorMessage } from '../services/api.js';
+import { accountPath } from '../services/auth.js';
 import Icon from './Icon.jsx';
 
 const roleNames = { applicant: 'Jobseeker workspace', employer: 'Employer workspace', admin: 'Administration' };
@@ -21,7 +22,7 @@ export default function Navbar({ application = false }) {
   const { showToast } = useUi();
   const navigate = useNavigate();
   const { pathname } = useLocation();
-  const dashboard = user?.role === 'admin' ? '/admin' : `/${user?.role}`;
+  const dashboard = user ? accountPath(user) : '/login';
   const links = application ? [...(roleLinks[user?.role] || []), ...(user?.role !== 'admin' ? [['Reports','/reports','shield']] : []), ['Notifications','/notifications','bell']]
     : [['Home','/','grid'],['Find Jobs','/jobs','search'],['For Employers','/employers','briefcase'],['About','/about','user']];
   async function onLogout() {

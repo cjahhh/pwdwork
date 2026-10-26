@@ -1,0 +1,58 @@
+name: PWDWork isolated email verification MySQL rehearsal
+run-name: Disposable MySQL rehearsal - ${{ github.sha }}
+
+# workflow_dispatch would require registering this file on the default branch.
+# An exact opt-in push on this testing branch keeps the workflow entirely off main.
+on:
+  push:
+    branches: [security/email-verification-mysql-rehearsal]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pwdwork-disposable-email-verification-rehearsal
+  cancel-in-progress: false
+
+jobs:
+  rehearsal:
+    if: >-
+      github.repository == 'cjahhh/pwdwork' &&
+      github.ref == 'refs/heads/security/email-verification-mysql-rehearsal' &&
+      github.event_name == 'push' &&
+      contains(github.event.head_commit.message, '[run-email-verification-rehearsal]')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Checkout exact testing commit without retaining credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Run disposable rehearsal with no production secrets
+        shell: bash
+        run: bash .github/scripts/email-verification-rehearsal.sh
+
+      - name: Publish sanitized summary
+        if: always()
+        shell: bash
+        run: |
+          if [ -f "$RUNNER_TEMP/pwdwork-ev-evidence/summary.md" ]; then
+            cat "$RUNNER_TEMP/pwdwork-ev-evidence/summary.md" >> "$GITHUB_STEP_SUMMARY"
+          else
+            printf '%s\n' 'FAIL: rehearsal did not produce evidence; no result is approved.' >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Retain safe evidence only
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: email-verification-rehearsal-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/pwdwork-ev-evidence/report.json
+            ${{ runner.temp }}/pwdwork-ev-evidence/summary.md
+          if-no-files-found: warn
+          retention-days: 1
+          include-hidden-files: false

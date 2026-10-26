@@ -19,6 +19,10 @@ function ProtectedRoute({ children, allowedRoles }) {
     return <Navigate to="/login" replace />;
   }
 
+  if (user.email_verification_required) {
+    return <Navigate to="/verify-email" replace />;
+  }
+
   if (allowedRoles?.length && !allowedRoles.includes(user.role)) {
     return <Navigate to={dashboardPath(user.role)} replace />;
   }

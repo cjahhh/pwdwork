@@ -12,7 +12,7 @@ function Layout() {
   const { announcement } = useUi();
   const { user, error, retry, notice } = useAuth();
   const { pathname } = useLocation();
-  const application = Boolean(user && (/^\/(applicant|employer|admin)(\/|$)/.test(pathname) || ['/notifications', '/reports'].includes(pathname) || (user.role === 'applicant' && /^\/jobs(\/|$)/.test(pathname))));
+  const application = Boolean(user && !user.email_verification_required && (/^\/(applicant|employer|admin)(\/|$)/.test(pathname) || ['/notifications', '/reports'].includes(pathname) || (user.role === 'applicant' && /^\/jobs(\/|$)/.test(pathname))));
   useEffect(() => {
     const target = document.getElementById("main-content");
     if (target) {

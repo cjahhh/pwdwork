@@ -12,6 +12,9 @@ export async function prepareCsrf() {
 api.interceptors.response.use(
   (response) => response,
   (error) => {
+    if (error.response?.data?.code === "email_verification_required") {
+      window.dispatchEvent(new CustomEvent("pwdwork:verification-required"));
+    }
     const inactive = error.response?.data?.code === "account_inactive";
     if (
       inactive || ([401, 419].includes(error.response?.status) &&
@@ -31,6 +34,7 @@ export function apiErrorMessage(
   error,
   fallback = "The request failed. Please try again.",
 ) {
+  if (error.response?.data?.code === "email_verification_required") return "Verify your email address before continuing.";
   if (error.response?.data?.code === "account_inactive") return error.response.data.message;
   if (error.response?.status === 401)
     return "Your session has expired. Please sign in again.";

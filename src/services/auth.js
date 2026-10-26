@@ -6,6 +6,22 @@ export function dashboardPath(role) {
   return "/applicant";
 }
 
+export function accountPath(user) {
+  return user.email_verification_required ? "/verify-email" : dashboardPath(user.role);
+}
+
+export async function resendVerification() {
+  await prepareCsrf();
+  const { data } = await api.post("/email/verification/resend");
+  return data;
+}
+
+export async function confirmVerification(proof) {
+  await prepareCsrf();
+  const { data } = await api.post("/email/verification/confirm", { proof });
+  return data;
+}
+
 export async function registerAccount(payload) {
   await prepareCsrf();
   const { data } = await api.post("/register", payload);

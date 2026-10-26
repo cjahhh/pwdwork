@@ -3,7 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
 import { useUi } from "../context/UiContext.jsx";
 import { apiErrorMessage } from "../services/api.js";
-import { dashboardPath } from "../services/auth.js";
+import { accountPath } from "../services/auth.js";
 import AuthLayout from "../components/AuthLayout.jsx";
 
 function LoginPage() {
@@ -24,7 +24,7 @@ function LoginPage() {
     try {
       const user = await login({ email, password });
       showToast("Logged in", `Welcome back, ${user.name}.`);
-      navigate(dashboardPath(user.role), { replace: true });
+      navigate(accountPath(user), { replace: true });
     } catch (err) {
       setError(apiErrorMessage(err, "Could not log in."));
     } finally {

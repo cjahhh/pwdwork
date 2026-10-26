@@ -1,0 +1,25 @@
+{
+  "baseline_commit": "d495aa8eed7a683b3213f3f59440b9700adfedcb",
+  "files": {
+    "backend/database/migrations/0001_01_01_000000_create_users_table.php": "8dc30ca1e911eaacecf070f9cc5d13d5314164ea11e2bca4921365759e4c336c",
+    "backend/database/migrations/0001_01_01_000001_create_cache_table.php": "2ca8398390ecef8eaf72aeac7fefce67f7de631b6f2ec7b7081c8db8953215dc",
+    "backend/database/migrations/0001_01_01_000002_create_jobs_table.php": "7c9c712adf4091c87bf2612f4d0dccdfa1df4501553e4ac068b83d7bd5462fa5",
+    "backend/database/migrations/2026_10_08_064215_create_personal_access_tokens_table.php": "c81ecde85ea5072188c468dcaf79776728b6eb8f684d63fc0d88a4908484ca75",
+    "backend/database/migrations/2026_10_15_140000_create_accommodations_table.php": "b958df93c955399f0f2bfe581a0c633c4ee5a2f0d6f671787e308353d78934ae",
+    "backend/database/migrations/2026_10_15_140001_create_applicant_profiles_table.php": "de39d23602c6b766044f592d8fe5c0d39164398834b01d3b7531ae6a5faf94fb",
+    "backend/database/migrations/2026_10_15_140002_create_employers_table.php": "3d25fc901f2b1663ba19930fa68a40e63338054a8d073ec68f4c292321f7cbae",
+    "backend/database/migrations/2026_10_15_140003_create_job_listings_table.php": "7f4012fd718655cc78c1d916dbb4ce276c683a35742f45647f6b39d2c6f9e2c0",
+    "backend/database/migrations/2026_10_15_140004_create_pivot_and_activity_tables.php": "0a5268a594c8832452da00382ea1fddfca077de321750c8722933de1a0ef69f5",
+    "backend/database/migrations/2026_10_19_000000_add_interview_fields_to_applications.php": "0a1bc314193d0d43a5b792a59e80b11fd88f578e8c987f9d5363b140d1eb2f6e",
+    "backend/database/migrations/2026_10_22_000001_add_profile_and_schedule_fields.php": "e9502999b4f54e679913b6e39627e4f4f9471b14660024504f8356ae9efccf47",
+    "backend/database/migrations/2026_10_24_000001_add_applicant_experience_and_application_sharing.php": "b4c68607145644d68a11bd8dae08110e6cf43ce0e4beab64daac17e0b3c3f234",
+    "backend/database/migrations/2026_10_24_000002_add_administration_workflows.php": "6d37d14e32422a7f1224c4ead76486b25f18458adbc6a0446288f11cae42a46c",
+    "backend/database/migrations/2026_10_25_000001_create_accommodation_request_workflows.php": "7ade2f2025744444154e994d3f6240f15a9346ef6e1f0547c4ffcfb9972045b0",
+    "backend/database/migrations/2026_10_25_000001_create_resumes_tables.php": "90451771da0e43e860495436e7994c4389e765db96773bec382d0a119941ab6f",
+    "backend/database/migrations/2026_10_26_000001_add_email_ownership_verification_to_users.php": "fd28dca332d95c120293375d799e48d2941333ef5eea308af6609c0b4c51fc6b",
+    ".github/sql/email-verification-original-users-digest.sql": "04ed26fb91453cf93ffbbbd282b3cd01b4fc6c24223a415584c6066ebdbdc8f8",
+    ".github/sql/email-verification-postflight.sql": "511fb04ca5d6250ae25c5f90c16e1a4eee04686d27934e781f3a9e1c76c22776",
+    ".github/sql/email-verification-preflight.sql": "276a2ffc4db23ba72bc01323f48fa016cb4969b8a0626f67567a5ea0bd7a124a",
+    ".github/sql/email-verification-synthetic-fixture.sql": "d4b9b5c1db1ec808b2c4e74ce4782b257247496e62d5b470112639f23249a3da"
+  }
+}

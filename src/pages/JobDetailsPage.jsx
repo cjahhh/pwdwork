@@ -9,13 +9,14 @@ import RequestState from "../components/RequestState.jsx";
 export default function JobDetailsPage() {
   const { id } = useParams(),
     { user } = useAuth();
-  return <JobDetails key={id + ":" + user?.id} id={id} user={user} />;
+  return <JobDetails key={id + ":" + user?.id + ":" + Boolean(user?.email_verification_required)} id={id} user={user} />;
 }
 function JobDetails({ id, user }) {
+  const canUseAccount = user?.role === "applicant" && !user.email_verification_required;
   const resource = useResource(() => fetchJob(id), id);
   const savedResource = useResource(
-    () => (user?.role === "applicant" ? getSavedJobState(id) : Promise.resolve(false)),
-    String(user?.id),
+    () => (canUseAccount ? getSavedJobState(id) : Promise.resolve(false)),
+    String(user?.id) + ":" + canUseAccount,
   );
   const [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
@@ -24,6 +25,10 @@ function JobDetails({ id, user }) {
   const [shareAccommodations, setShareAccommodations] = useState(false);
   const saved = Boolean(savedResource.data);
   async function act(action) {
+    if (user?.email_verification_required) {
+      setError("Verify your email address before applying or saving jobs.");
+      return;
+    }
     if (user?.role !== "applicant") {
       setError("Sign in with an applicant account to apply or save jobs.");
       return;
@@ -60,7 +65,7 @@ function JobDetails({ id, user }) {
             {job.company} | {job.location} | {job.type} | {job.mode}
           </p>
           <h2>About this role</h2><p className="whitespace-pre-wrap">{job.description}</p>
-          {user && ["applicant", "employer"].includes(user.role) && <p>
+          {user && !user.email_verification_required && ["applicant", "employer"].includes(user.role) && <p>
             <Link to={`/reports?target_type=job&target_id=${job.id}`}>Report this listing</Link>{" | "}
             <Link to={`/reports?target_type=employer&target_id=${job.employerId}`}>Report this employer</Link>
           </p>}
@@ -81,7 +86,8 @@ function JobDetails({ id, user }) {
           )}
           {error && <p role="alert">{error}</p>}
           <p role="status">{message}</p>
-          {user?.role === "applicant" && (
+          {user?.email_verification_required && <p><Link to="/verify-email">Verify your email</Link> to apply or save jobs. You can keep browsing this listing.</p>}
+          {canUseAccount && (
             <>
               <RequestState resource={savedResource} />
               <label className="block">
@@ -100,7 +106,7 @@ function JobDetails({ id, user }) {
           <div className="flex flex-wrap gap-4">
             <button
               disabled={
-                busy || savedResource.loading || Boolean(savedResource.error)
+                busy || Boolean(user?.email_verification_required) || savedResource.loading || Boolean(savedResource.error)
               }
               aria-pressed={saved}
               onClick={() => act("save")}
@@ -109,7 +115,7 @@ function JobDetails({ id, user }) {
             </button>
             <button
               className="primary-button"
-              disabled={busy}
+              disabled={busy || Boolean(user?.email_verification_required)}
               onClick={() => act("apply")}
             >
               {busy ? "Saving..." : "Apply now"}

@@ -7,6 +7,9 @@ use App\Models\ApplicantProfile;
 use App\Models\Employer;
 use App\Models\User;
 use App\Rules\PasswordByteLimit;
+use App\Services\EmailVerification;
+use App\Support\EmailVerificationDiagnostics;
+use Illuminate\Auth\Events\Registered;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -29,15 +32,28 @@ class AuthController extends Controller
             'company_name' => ['required_if:role,employer', 'nullable', 'string', 'max:255'],
         ]);
 
-        $user = DB::transaction(function () use ($data) {
+        $enroll = (bool) config('email-verification.enabled');
+        if ($enroll) {
+            try {
+                app(EmailVerification::class)->assertReady();
+            } catch (\Throwable) {
+                EmailVerificationDiagnostics::record('dispatch_failed');
+
+                return response()->json(['message' => 'Account creation is temporarily unavailable. Please try again later.'], 503);
+            }
+        }
+        $user = DB::transaction(function () use ($data, $enroll) {
             $user = User::query()->create([
                 'name' => $data['name'],
                 'email' => $data['email'],
                 'password' => $data['password'],
                 'role' => $data['role'],
                 'status' => 'active',
-                'email_verified_at' => now(),
             ]);
+            if ($enroll) {
+                // Only trusted server code sets enrollment; request fields cannot grant verification.
+                $user->forceFill(['email_verification_required_at' => now()])->save();
+            }
 
             if ($user->role === 'applicant') {
                 ApplicantProfile::query()->create([
@@ -59,6 +75,16 @@ class AuthController extends Controller
         });
         Auth::guard('web')->login($user);
         $request->session()->regenerate();
+
+        if ($enroll) {
+            try {
+                // The account/profile transaction has committed. One listener dispatches the encrypted job.
+                event(new Registered($user));
+            } catch (\Throwable) {
+                // Keep the newly created account and session; resend can recover a failed dispatch.
+                EmailVerificationDiagnostics::record('dispatch_failed');
+            }
+        }
 
         return response()->json([
             'message' => 'Account created.',
@@ -143,6 +169,9 @@ class AuthController extends Controller
             'email' => $user->email,
             'role' => $user->role,
             'status' => $user->status,
+            'email_verified' => $user->hasVerifiedEmail(),
+            'email_verification_required' => $user->requiresEmailVerification(),
+            'email_verification_available' => app(EmailVerification::class)->available($user),
             'company_name' => $user->employer?->company_name,
             'verification_status' => $user->employer?->verification_status,
         ];
