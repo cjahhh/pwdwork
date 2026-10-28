@@ -9,6 +9,7 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Pwdwork\EmailIncrementalLab\RestoreComparisonFailure;
 
+use function Pwdwork\EmailIncrementalLab\definitionParts;
 use function Pwdwork\EmailIncrementalLab\diagnostic;
 use function Pwdwork\EmailIncrementalLab\fullSnapshot;
 use function Pwdwork\EmailIncrementalLab\operation;
@@ -145,20 +146,186 @@ class EmailVerificationRestoreComparisonTest extends TestCase
         }
     }
 
-    public function test_reordered_ddl_lines_are_detected_and_not_silently_normalized(): void
+    public function test_reordered_final_ddl_clauses_move_commas_and_are_not_silently_accepted(): void
     {
         $before = $this->fixture();
         $after = $before;
         $lines = explode("\n", $after['ddl']);
         [$lines[2], $lines[3]] = [$lines[3], $lines[2]];
+        $lines[2] .= ',';
+        $lines[3] = rtrim($lines[3], ',');
         $after['ddl'] = implode("\n", $lines);
         try {
             requireRestored($this->snapshot($before['ddl']), $this->snapshot($after['ddl']), $this->pdo($before), $this->pdo($after));
             $this->fail('Raw DDL line order differences still require review');
         } catch (RestoreComparisonFailure $error) {
             $this->assertFalse($error->comparison['checks']['definition']);
-            $this->assertTrue($error->comparison['checks']['definition_line_set']);
+            $this->assertFalse($error->comparison['checks']['definition_line_set']);
+            $this->assertTrue($error->comparison['checks']['definition_parse']);
+            $this->assertFalse($error->comparison['checks']['definition_tokens']);
+            $this->assertTrue($error->comparison['checks']['definition_clause_set']);
+            $this->assertTrue($error->comparison['checks']['definition_indexes']);
             $this->assertTrue($error->comparison['checks']['indexes']);
+        }
+    }
+
+    private static function definitionFixture(): string
+    {
+        return <<<'SQL'
+CREATE TABLE `users` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `status` varchar(20) DEFAULT 'synthetic-private, (default)  ON DELETE RESTRICT',
+  `computed` int GENERATED ALWAYS AS ((`id` + 1)) VIRTUAL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `synthetic_index` (`status`(10),`id`) INVISIBLE,
+  CONSTRAINT `synthetic_fk` FOREIGN KEY (`id`) REFERENCES `sessions` (`id`) ON DELETE RESTRICT,
+  CONSTRAINT `synthetic_check` CHECK ((`id` > 0)) /*!80016 NOT ENFORCED */
+) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='synthetic-private  comment'
+SQL;
+    }
+
+    public function test_final_foreign_key_reordering_reproduces_all_supplied_comparison_outcomes(): void
+    {
+        $before = $this->fixture();
+        $before['ddl'] = "CREATE TABLE `users` (\n  `id` bigint unsigned NOT NULL,\n  PRIMARY KEY (`id`),\n  CONSTRAINT `synthetic_a` FOREIGN KEY (`id`) REFERENCES `sessions` (`id`) ON DELETE RESTRICT,\n  CONSTRAINT `synthetic_b` FOREIGN KEY (`id`) REFERENCES `jobs` (`id`) ON DELETE RESTRICT\n) ENGINE=InnoDB AUTO_INCREMENT=2";
+        $after = $before;
+        $lines = explode("\n", $after['ddl']);
+        [$lines[3], $lines[4]] = [$lines[4].',', rtrim($lines[3], ',')];
+        $after['ddl'] = implode("\n", $lines);
+        $left = $this->snapshot($before['ddl']);
+        $right = $this->snapshot($after['ddl']);
+        $left['users']['records']['rows'] = $right['users']['records']['rows'] = 0;
+        try {
+            requireRestored($left, $right, $this->pdo($before), $this->pdo($after));
+            $this->fail('A reproduced possibility must not be accepted as the established runtime cause');
+        } catch (RestoreComparisonFailure $error) {
+            foreach ($error->comparison['checks'] as $category => $outcome) {
+                $this->assertSame(! in_array($category, ['definition', 'definition_line_set', 'definition_tokens'], true), $outcome, $category);
+            }
+            $this->assertSame(0, $error->comparison['before_rows']);
+            $this->assertSame(0, $error->comparison['after_rows']);
+        }
+    }
+
+    public function test_whitespace_outside_quotes_is_classified_but_raw_restore_still_fails(): void
+    {
+        $before = $this->fixture();
+        $after = $before;
+        $after['ddl'] = str_replace("\n  ", "\r\n\t", $before['ddl']);
+        $this->assertSame(definitionParts($before['ddl']), definitionParts($after['ddl']));
+        try {
+            requireRestored($this->snapshot($before['ddl']), $this->snapshot($after['ddl']), $this->pdo($before), $this->pdo($after));
+            $this->fail('Diagnostic equivalence must not bypass exact restore validation');
+        } catch (RestoreComparisonFailure $error) {
+            $this->assertFalse($error->comparison['checks']['definition']);
+            $this->assertTrue($error->comparison['checks']['definition_tokens']);
+        }
+    }
+
+    public static function definitionChanges(): array
+    {
+        $ddl = self::definitionFixture();
+        $changes = [
+            ['bigint unsigned', 'int unsigned', 'definition_columns'],
+            ['(default)  ON', '(default) ON', 'definition_columns'],
+            ['DEFAULT \'synthetic-private, (default)  ON DELETE RESTRICT\'', 'DEFAULT NULL', 'definition_columns'],
+            ['(`id` + 1)', '(`id` + 2)', 'definition_columns'],
+            ['PRIMARY KEY (`id`)', 'PRIMARY KEY (`status`)', 'definition_primary_key'],
+            ['UNIQUE KEY', 'KEY', 'definition_indexes'],
+            ['(`status`(10),`id`)', '(`id`,`status`(10))', 'definition_indexes'],
+            ['`status`(10)', '`status`(5)', 'definition_indexes'],
+            ['INVISIBLE', 'VISIBLE', 'definition_indexes'],
+            ['`synthetic_index`', '`different_index`', 'definition_indexes'],
+            ['`synthetic_fk`', '`different_fk`', 'definition_foreign_keys'],
+            ['REFERENCES `sessions`', 'REFERENCES `jobs`', 'definition_foreign_keys'],
+            ['ON DELETE RESTRICT,', 'ON DELETE CASCADE,', 'definition_foreign_keys'],
+            ['(`id` > 0)', '(`id` >= 0)', 'definition_checks'],
+            ['/*!80016 NOT ENFORCED */', '/*!80016 ENFORCED */', 'definition_checks'],
+            ['ENGINE=InnoDB', 'ENGINE=MyISAM', 'definition_table_options'],
+            ['utf8mb4_unicode_ci', 'utf8mb4_bin', 'definition_table_options'],
+            ['AUTO_INCREMENT=2', 'AUTO_INCREMENT=3', 'definition_auto_increment_option'],
+            ['private  comment', 'private comment', 'definition_table_options'],
+            ['CREATE TABLE `users`', 'CREATE TABLE `jobs`', 'definition_header'],
+        ];
+
+        return array_map(fn ($change) => [$ddl, str_replace($change[0], $change[1], $ddl), $change[2]], $changes);
+    }
+
+    #[DataProvider('definitionChanges')]
+    public function test_meaningful_ddl_changes_have_precise_categories_and_remain_failures(string $ddl, string $changed, string $category): void
+    {
+        $left = definitionParts($ddl);
+        $right = definitionParts($changed);
+        $this->assertNotSame($left[$category], $right[$category]);
+        $this->assertNotSame($left['definition_tokens'], $right['definition_tokens']);
+        $this->assertNotSame($left['definition_clause_set'], $right['definition_clause_set']);
+        $before = $this->fixture();
+        $after = $before;
+        $before['ddl'] = $ddl;
+        $after['ddl'] = $changed;
+        try {
+            requireRestored($this->snapshot($ddl), $this->snapshot($changed), $this->pdo($before), $this->pdo($after));
+            $this->fail('Equal supplemental metadata cannot bypass a meaningful DDL difference');
+        } catch (RestoreComparisonFailure $error) {
+            $this->assertTrue($error->comparison['checks']['definition_parse']);
+            $this->assertFalse($error->comparison['checks'][$category]);
+            $this->assertTrue($error->comparison['checks']['row_count']);
+            $this->assertTrue($error->comparison['checks']['data_fingerprint']);
+            $this->assertStringNotContainsString('synthetic', json_encode($error->comparison));
+            $this->assertStringNotContainsString('CREATE TABLE', json_encode($error->comparison));
+        }
+    }
+
+    public function test_fk_default_action_hint_preserves_names_targets_and_nondefault_actions(): void
+    {
+        $ddl = self::definitionFixture();
+        $left = definitionParts($ddl);
+        foreach (['', ' ON DELETE NO ACTION'] as $replacement) {
+            $right = definitionParts(str_replace(' ON DELETE RESTRICT,', $replacement.',', $ddl));
+            $this->assertNotSame($left['definition_foreign_keys'], $right['definition_foreign_keys']);
+            $this->assertSame($left['definition_fk_default_actions'], $right['definition_fk_default_actions']);
+            // The same keywords inside a quoted default must never be removed.
+            $this->assertSame($left['definition_columns'], $right['definition_columns']);
+        }
+        foreach ([' ON DELETE CASCADE', ' ON DELETE SET NULL'] as $replacement) {
+            $right = definitionParts(str_replace(' ON DELETE RESTRICT,', $replacement.',', $ddl));
+            $this->assertNotSame($left['definition_fk_default_actions'], $right['definition_fk_default_actions']);
+        }
+        $right = definitionParts(str_replace('REFERENCES `sessions`', 'REFERENCES `jobs`', $ddl));
+        $this->assertNotSame($left['definition_fk_default_actions'], $right['definition_fk_default_actions']);
+    }
+
+    public function test_quoted_delimiters_comments_and_duplicate_clauses_are_preserved(): void
+    {
+        $ddl = "CREATE TABLE `users` (`odd``name` varchar(20) DEFAULT 'it\\'s, (a)', `other` varchar(20) DEFAULT 'it''s', CHECK ((1 > 0)) /* (, ) */) ENGINE=InnoDB";
+        $parts = definitionParts($ddl);
+        $this->assertCount(2, $parts['definition_columns']);
+        $this->assertCount(1, $parts['definition_checks']);
+        $this->assertContains("'it\\'s, (a)'", $parts['definition_columns'][0]);
+        $this->assertContains("'it''s'", $parts['definition_columns'][1]);
+        $this->assertContains('/* (, ) */', $parts['definition_checks'][0]);
+        $duplicated = str_replace('CHECK ((1 > 0))', 'CHECK ((1 > 0)), CHECK ((1 > 0))', $ddl);
+        $this->assertNotSame($parts['definition_clause_set'], definitionParts($duplicated)['definition_clause_set']);
+        $reordered = str_replace("`odd``name` varchar(20) DEFAULT 'it\\'s, (a)', `other` varchar(20) DEFAULT 'it''s'",
+            "`other` varchar(20) DEFAULT 'it''s', `odd``name` varchar(20) DEFAULT 'it\\'s, (a)'", $ddl);
+        $this->assertSame($parts['definition_clause_set'], definitionParts($reordered)['definition_clause_set']);
+        $this->assertNotSame($parts['definition_columns'], definitionParts($reordered)['definition_columns']);
+    }
+
+    public function test_unsupported_definition_keeps_original_metadata_diagnostics_and_fails_closed(): void
+    {
+        $before = $this->fixture();
+        $after = $before;
+        $after['ddl'] = 'synthetic-private-unsupported-definition';
+        try {
+            requireRestored($this->snapshot($before['ddl']), $this->snapshot($after['ddl']), $this->pdo($before), $this->pdo($after));
+            $this->fail('Unsupported diagnostic grammar must not pass');
+        } catch (RestoreComparisonFailure $error) {
+            $this->assertFalse($error->comparison['checks']['definition']);
+            $this->assertFalse($error->comparison['checks']['definition_parse']);
+            $this->assertTrue($error->comparison['checks']['column_definitions']);
+            $this->assertTrue($error->comparison['checks']['foreign_keys']);
+            $this->assertStringNotContainsString('synthetic-private', json_encode($error->comparison));
         }
     }
 

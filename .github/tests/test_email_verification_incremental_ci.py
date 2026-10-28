@@ -231,7 +231,12 @@ class IncrementalCiSafetyTest(unittest.TestCase):
         return dict(table='users', before_rows=5, after_rows=5,
                     checks=dict(definition=False, row_count=True, data_fingerprint=True,
                                 column_definitions=True, column_defaults=True, indexes=True,
-                                foreign_keys=True, auto_increment_metadata=False))
+                                foreign_keys=True, auto_increment_metadata=False,
+                                definition_parse=True, definition_tokens=False, definition_header=True,
+                                definition_clause_set=True, definition_columns=True, definition_primary_key=True,
+                                definition_indexes=True, definition_foreign_keys=True, definition_checks=True,
+                                definition_other_clauses=True, definition_table_options=True,
+                                definition_auto_increment_option=True, definition_fk_default_actions=True))
 
     def test_restore_comparison_survives_actual_cleanup_capture_and_final_summary(self):
         root = Path(__file__).resolve().parents[2]
@@ -256,6 +261,25 @@ class IncrementalCiSafetyTest(unittest.TestCase):
             self.assertIn('Comparison table: `users`', summary)
             self.assertIn('| auto_increment_metadata | false |', summary)
             self.assertIn('| data_fingerprint | true |', summary)
+            self.assertIn('| definition_clause_set | true |', summary)
+            self.assertIn('| definition_tokens | false |', summary)
+
+    def test_diagnostic_equivalence_does_not_promote_a_raw_definition_failure_to_pass(self):
+        checks = {key: True for key in ci.COMPARISON_CHECKS}
+        checks['definition'] = False
+        comparison = dict(table='accommodation_request_events', before_rows=0, after_rows=0, checks=checks)
+        detail = dict(operation='restore_compare', category='validation', runner_phase=None,
+                      mysql_code=None, comparison=comparison)
+        with tempfile.TemporaryDirectory() as directory:
+            temp = Path(directory)
+            self.write(temp, dict(self.report(), status='FAIL', phase='preview_readonly', checks=[], diagnostic=detail))
+            passed, summary = ci.finalize(temp, dict(self.env(), HARNESS_OUTCOME='failure'))
+            self.assertFalse(passed)
+            final = json.loads(self.read_final(temp))
+            self.assertEqual(final['diagnostic'], detail)
+            self.assertEqual(final['passed_scenarios'], 0)
+            self.assertEqual(final['status'], 'FAIL')
+            self.assertIn('| definition | false |', summary)
 
     def test_comparison_schema_rejects_private_names_values_hashes_and_non_boolean_outcomes(self):
         for changed in (dict(self.comparison(), table='synthetic-private-table'),
@@ -263,6 +287,8 @@ class IncrementalCiSafetyTest(unittest.TestCase):
                         dict(self.comparison(), before_rows=True), dict(self.comparison(), after_rows=-1),
                         dict(self.comparison(), raw_ddl='synthetic-private-definition'),
                         dict(self.comparison(), checks={'definition': 'synthetic-private-hash'}),
+                        dict(self.comparison(), checks={'definition_tokens': 'synthetic-private-sql'}),
+                        dict(self.comparison(), checks={'definition_parse': 0}),
                         dict(self.comparison(), checks={'synthetic-private-field': False}),
                         dict(self.comparison(), checks={'definition': True})):
             with self.subTest(changed=changed), self.assertRaises(ValueError):

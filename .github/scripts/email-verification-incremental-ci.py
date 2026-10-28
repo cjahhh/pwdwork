@@ -52,7 +52,12 @@ TABLE_NAMES = {'users', 'password_reset_tokens', 'sessions', 'cache', 'cache_loc
 COMPARISON_CHECKS = {'table_inventory', 'table_order', 'snapshot_structure', 'definition', 'row_count',
                      'data_fingerprint', 'migration_history', 'primary_key', 'column_definitions',
                      'column_defaults', 'indexes', 'foreign_keys', 'table_options',
-                     'auto_increment_metadata', 'definition_line_set', 'metadata_read'}
+                     'auto_increment_metadata', 'definition_line_set', 'metadata_read',
+                     'definition_parse', 'definition_tokens', 'definition_header', 'definition_clause_set',
+                     'definition_columns', 'definition_primary_key', 'definition_indexes',
+                     'definition_foreign_keys', 'definition_checks', 'definition_other_clauses',
+                     'definition_table_options', 'definition_auto_increment_option',
+                     'definition_fk_default_actions'}
 
 
 def demand(condition):

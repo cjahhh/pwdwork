@@ -1,7 +1,7 @@
 # Disposable restore comparison investigation
 
 Reviewed **29 October 2026**, with local HEAD matching the reported commit
-`bf432d59481e259b2545e3b5016410864824c491`. The owner reports run `40723965550`
+`6f97579079218fb937174ba93191ad35ccfe221b`. The owner reports run `40727509754`
 failed `preview_readonly`, operation `restore_compare`, category `validation`,
 runner phase/native code null, with **0/32** scenarios passed. This report is
 based on that supplied diagnostic and the matching local code, not an independently
@@ -9,7 +9,7 @@ retrieved private Actions artifact. No production connection was made.
 
 ## Exact boundary and remaining uncertainty
 
-The original call chain was:
+The current call chain is:
 
 1. Bash creates an isolated MySQL 8.4.11 server, runs the reviewed 15-migration
    initializer and synthetic fixture, then makes a logical dump.
@@ -18,25 +18,37 @@ The original call chain was:
    inside the network-none lab; it is not a production connection.
 3. The PHP lab connects to the restored and baseline databases using hardcoded
    loopback, verifies MySQL version and selects UTC on both connections.
-4. `fullSnapshot($baseline)` succeeds before operation `restore_compare`.
-5. At `restore_compare`, it evaluates
-   `demand($baselineFull === fullSnapshot($pdo))`.
+4. `fullSnapshot($baseline)` and `fullSnapshot($pdo)` both complete, under
+   `baseline_snapshot` and `restored_snapshot` respectively.
+5. `requireRestored()` calls `restoreDifference()` at `restore_compare`. Strict
+   snapshot inequality identifies `accommodation_request_events`, then supplemental
+   `schemaComponents()` reads classify the raw definition mismatch.
 
-That expression contains **two** possible validation failures: a missing primary
-key inside the restored `fullSnapshot()`, or strict inequality of the completed
-snapshot arrays. Other native PDO failures would have a database category rather
-than this validation category. The current diagnostic does not distinguish those
-two assertions or identify a differing table/property.
+The confirmed failure is unequal SHA256 fingerprints of the **raw**
+`SHOW CREATE TABLE` text. Both row counts are zero and row fingerprints match.
+Table inventory, snapshot structure, columns/defaults, indexes, foreign keys,
+table options and Information Schema AUTO_INCREMENT match. The raw hashed-line
+multiset does not match. Missing primary keys and native connection/query errors
+are not the reported failure.
 
 The incremental runner has **not started** at this point. Its authorization,
 certificate verification, migration and postflight are not the origin of this
 specific reported assertion. Both controller PDO connections and the baseline
 snapshot completed; this does not prove the runner's later TLS connection.
 
-**The underlying differing value is not confirmed.** There is no evidence yet
-that records are identical, that AUTO_INCREMENT differs, or that a mismatch is
-nonessential generated metadata. No counter, schema field, constraint name or
-DDL text is stripped/ignored to make the test pass.
+**The exact differing SQL fragment remains unconfirmed.** Matching selected
+metadata is insufficient to prove equivalent full definitions: CHECK expressions,
+comments and other clauses/options are also represented by SHOW CREATE. No raw
+DDL is available in the supplied sanitized evidence, and Docker is unavailable
+locally. The private run artifact was not independently retrieved.
+
+A concrete diagnostic blind spot is reproduced offline: swapping the final two
+foreign-key declarations moves the trailing separator comma. All supplied
+comparison outcomes can remain exactly as reported, including
+`definition_line_set: false`. Consequently that result does **not** rule out
+declaration-order differences. This reproduction establishes a possibility, not
+the runtime root cause. The affected migration declares two foreign keys through
+Laravel schema operations; no generated-declaration order is assumed stable.
 
 ## Backup and equality review
 
@@ -70,11 +82,20 @@ not fields of the original equality snapshot; no new exception for them is added
 
 ## Smallest safe correction: precise comparison diagnostics
 
-The restored snapshot is now collected under `restored_snapshot`, then compared
-under `restore_compare`. A missing primary key reports `primary_key: false`.
-Strict inequality reports the **first** affected table and individual equality
-outcomes, so a nested snapshot assertion and completed-snapshot mismatch can be
-distinguished. Unknown table names are replaced with null.
+The confirmed diagnostic defect is corrected by adding SQL-token and declaration
+comparisons **only after** a raw DDL mismatch. The tokenizer preserves quoted
+identifiers, quoted values, escaped/doubled quotes and comments byte for byte.
+It splits declarations at commas only outside quotes/comments and nested
+parentheses. Token arrays are privately hashed with explicit JSON boundaries.
+No database SQL is executed by the classifier.
+
+Whitespace-only and declaration-order equivalence can now be recognized in
+diagnostics without accepting the failed restore. A multiset preserves duplicate
+clauses and exact names/tokens; separate column-order and unknown-clause-order
+checks prevent interpreting a multiset match alone as structural equivalence.
+The raw definition fingerprint and all acceptance checks remain unchanged. A
+parser failure reports `definition_parse: false`, retains available metadata
+comparisons, and leaves the original failure intact.
 
 The original `definition` and `records` fingerprints and strict acceptance
 criteria remain intact. Supplementary metadata is read **only after a DDL
@@ -94,6 +115,21 @@ reports `metadata_read: false` and still rejects the original mismatch.
 | `table_options` | Engine, collation, row format and create options. |
 | `auto_increment_metadata` | Information Schema counter equality; no counter value is printed. |
 | `definition_line_set` | Whether raw DDL has the same hashed lines regardless of order; diagnostics only. Even a line-order-only difference still fails. |
+| `definition_parse` | Both DDL texts were classified successfully; false never promotes a restore to PASS. |
+| `definition_tokens` | Exact token sequence excluding whitespace outside quotes/comments. True with raw definition false identifies a whitespace-only representation difference. |
+| `definition_header` | CREATE TABLE header, including the exact quoted table name. |
+| `definition_clause_set` | Header, declaration multiset and trailing options match after tokenization. Separators are parsed, so final-declaration comma movement is handled. Column order must still be checked separately. |
+| `definition_columns` | Ordered column declarations, preserving types, defaults, literals, expressions, charset/collation and comments. |
+| `definition_primary_key`, `definition_indexes` | Declaration multisets; preserve names, column order, uniqueness, prefixes, visibility, expressions and all remaining tokens. |
+| `definition_foreign_keys`, `definition_checks` | Exact declaration multisets including names, targets, actions, expressions and versioned comments. |
+| `definition_other_clauses` | Any unclassified declarations, in order; none are discarded. |
+| `definition_table_options` | All tokens after the closing table parenthesis, including comments, counters and partition declarations. |
+| `definition_auto_increment_option` | The actual DDL AUTO_INCREMENT option, separately from potentially cached Information Schema metadata. No value is printed. |
+| `definition_fk_default_actions` | Diagnostic-only FK comparison after removing explicit RESTRICT/NO ACTION actions, scoped to FK tokens; CASCADE, SET NULL, names and targets remain exact. This hint never changes acceptance. |
+
+MySQL documents default NO ACTION omission in SHOW CREATE and explicit RESTRICT
+display. This is background for the scoped hint, **not evidence** that this run
+lost an action: [MySQL foreign-key actions](https://dev.mysql.com/doc/refman/8.4/en/create-table-foreign-keys.html).
 
 Only fixed category names, reviewed table names, boolean outcomes and safe row
 counts are published. No raw DDL, defaults, index/constraint names, schema names,
@@ -105,32 +141,46 @@ pipeline. A comparison cannot accompany PASS evidence.
 ## Changes and validation
 
 - `.github/scripts/email-verification-incremental-rehearsal.php`: comparison
-  decomposition and safe metadata classification, retaining the strict guard.
+  token/declaration diagnostics, retaining the strict guard.
 - `.github/scripts/email-verification-incremental-ci.py`: nested comparison
-  allowlists and sanitized JSON/Markdown rendering.
+  allowlists for the new boolean categories; existing rendering/redaction unchanged.
 - `backend/tests/Unit/EmailVerificationRestoreComparisonTest.php`: mocked-PDO
   regressions for identical restore, schema/default/index/FK/options/counter
   differences, row and ledger changes, table/order differences, missing primary
-  keys, redaction and diagnostic-read failures. No MySQL connection is opened.
+  keys, redaction and diagnostic-read failures. Additional regressions reproduce
+  final-clause comma movement and distinguish whitespace/order equivalence from
+  meaningful changes. Even diagnostic-equivalent raw differences still fail.
+  No MySQL connection is opened.
 - `.github/tests/test_email_verification_incremental_ci.py`: safe nested-schema
-  validation and actual cleanup-heredoc-to-artifact propagation regressions.
+  validation and actual cleanup-heredoc-to-artifact propagation regressions,
+  including new categories and zero-row failures. Equivalence hints cannot
+  promote failed evidence to PASS.
 - This investigation record.
 
-Local results: **156 PHP tests / 317 assertions**, **37 Python tests**, PHP syntax
-and Pint, Bash syntax, compilation of all four Python heredocs, actionlint and
+Local results: **181 PHP tests / 599 assertions**, **38 Python tests**, PHP syntax
+and Pint, Bash syntax, compilation of all four incremental-rehearsal Python
+heredocs (ten across the three email-verification Bash scripts), actionlint and
 whitespace checks passed. ShellCheck is unavailable. Docker is still unavailable
 locally; no MySQL integration run or new GitHub run occurred during this task.
 
 The Bash backup/restore procedure, all **32 scenario names**, production runner,
 actual migration, authentication/approval code, both workflows and feature
 configuration are unchanged. The production workflow retains its explicit
-`if: false && ...` condition. Email enrollment remains disabled in the actual
-runner/configuration; the existing deliberately invalid `enrollment_enabled`
-scenario still tests rejection before activation or database access.
+`if: false && ...` condition. Normal lab runner environments explicitly set
+`EMAIL_VERIFICATION_ENABLED=false`; application configuration still defaults to
+false and the production runner still rejects enrollment-enabled execution.
+The existing deliberately invalid `enrollment_enabled` scenario still tests
+rejection before activation or database access. No deployed environment or
+production configuration was accessed to verify its runtime state.
 
-Another separately authorized isolated diagnostic run is justified to obtain the
-first affected table and comparison outcomes. Do not claim the restore problem
-is fixed or normalize metadata until those outcomes establish a concrete cause.
+Another separately authorized isolated diagnostic run is justified to classify
+the differing SQL representation. If `definition_tokens` is true, only whitespace
+outside protected tokens differs. If it is false but `definition_clause_set` and
+all ordered/category comparisons are true, only declaration placement differs.
+Otherwise the false component category identifies where exact tokens differ;
+the FK-action and DDL-counter hints narrow those particular cases. No DDL text
+or values should be published. Do not claim the restore problem is fixed or
+change acceptance until evidence establishes a concrete, harmless difference.
 Use a new reviewed opt-in commit through the existing runbook, not an old-commit
 rerun. No commit, push, merge, deployment, production access or credential change
 was performed here. Production migration and activation remain unapproved.

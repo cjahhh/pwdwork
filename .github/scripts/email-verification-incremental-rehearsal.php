@@ -104,6 +104,93 @@ function restoreDifference(array $before, array $after): ?array
     throw new RuntimeException('disposable_snapshot_structure_rejected');
 }
 
+/** Private SQL tokens only. Quotes/comments stay byte-exact; no SQL is executed. */
+function definitionParts(string $ddl): array
+{
+    $pattern = <<<'REGEX'
+~`(?:``|[^`])*`|'(?:''|\\.|[^'\\])*'|"(?:""|\\.|[^"\\])*"|/\*.*?\*/|--[ \t][^\r\n]*|\#[^\r\n]*|[A-Za-z0-9_$]+|[ \t\r\n]+|.~s
+REGEX;
+    demand(preg_match_all($pattern, $ddl, $matches) !== false && implode('', $matches[0]) === $ddl);
+    $tokens = array_values(array_filter($matches[0], fn ($token) => ! ctype_space($token)));
+    demand(count($tokens) >= 6 && array_slice($tokens, 0, 2) === ['CREATE', 'TABLE']
+        && str_starts_with($tokens[2], '`') && $tokens[3] === '(');
+    demand(array_intersect($tokens, ["'", '"', '`']) === []);
+    $clauses = [];
+    $clause = [];
+    $depth = 1;
+    for ($i = 4; $i < count($tokens); $i++) {
+        $token = $tokens[$i];
+        if ($token === '(') {
+            $depth++;
+        } elseif ($token === ')') {
+            $depth--;
+            if ($depth === 0) {
+                break;
+            }
+        }
+        if ($token === ',' && $depth === 1) {
+            demand($clause !== []);
+            $clauses[] = $clause;
+            $clause = [];
+        } else {
+            $clause[] = $token;
+        }
+    }
+    demand($depth === 0 && $clause !== []);
+    $clauses[] = $clause;
+    $header = array_slice($tokens, 0, 4);
+    $options = array_slice($tokens, $i + 1);
+    $groups = ['definition_columns' => [], 'definition_primary_key' => [], 'definition_indexes' => [],
+        'definition_foreign_keys' => [], 'definition_checks' => [], 'definition_other_clauses' => []];
+    foreach ($clauses as $clause) {
+        $kind = $clause[0] === 'CONSTRAINT' ? ($clause[2] ?? '') : $clause[0];
+        $group = match (true) {
+            str_starts_with($clause[0], '`') => 'definition_columns',
+            $kind === 'PRIMARY' => 'definition_primary_key',
+            in_array($kind, ['UNIQUE', 'KEY', 'INDEX', 'FULLTEXT', 'SPATIAL'], true) => 'definition_indexes',
+            $kind === 'FOREIGN' => 'definition_foreign_keys',
+            $kind === 'CHECK' => 'definition_checks',
+            default => 'definition_other_clauses',
+        };
+        $groups[$group][] = $clause;
+    }
+    $sorted = function (array $items): array {
+        usort($items, fn ($a, $b) => strcmp(encode($a), encode($b)));
+
+        return $items;
+    };
+    // Diagnostic multiset comparisons retain names, duplicate clauses and all tokens.
+    // Column and unrecognized-clause order remains visible in separate categories.
+    foreach (['definition_primary_key', 'definition_indexes', 'definition_foreign_keys', 'definition_checks'] as $group) {
+        $groups[$group] = $sorted($groups[$group]);
+    }
+    $defaultActions = array_map(function ($clause) {
+        for ($i = 0; $i < count($clause); $i++) {
+            if ($clause[$i] === 'ON' && in_array($clause[$i + 1] ?? '', ['DELETE', 'UPDATE'], true)) {
+                $length = ($clause[$i + 2] ?? '') === 'RESTRICT' ? 3
+                    : (array_slice($clause, $i + 2, 2) === ['NO', 'ACTION'] ? 4 : 0);
+                if ($length !== 0) {
+                    array_splice($clause, $i, $length);
+                    $i--;
+                }
+            }
+        }
+
+        return $clause;
+    }, $groups['definition_foreign_keys']);
+    $counter = [];
+    for ($i = 0; $i < count($options) - 2; $i++) {
+        if (array_slice($options, $i, 2) === ['AUTO_INCREMENT', '='] && ctype_digit($options[$i + 2])) {
+            $counter[] = array_slice($options, $i, 3);
+        }
+    }
+
+    return ['definition_tokens' => $tokens, 'definition_header' => $header,
+        'definition_clause_set' => [$header, $sorted($clauses), $options],
+        ...$groups, 'definition_table_options' => $options, 'definition_auto_increment_option' => $counter,
+        'definition_fk_default_actions' => $sorted($defaultActions)];
+}
+
 /** Private diagnostic hashes only; never change the raw DDL or acceptance rule. */
 function schemaComponents(PDO $pdo, string $table): array
 {
@@ -126,11 +213,19 @@ function schemaComponents(PDO $pdo, string $table): array
     $lines = array_map(fn ($line) => hash('sha256', $line), explode("\n", $ddl));
     sort($lines);
 
-    return array_map(fn ($value) => hash('sha256', encode($value)), [
+    $components = [
         'column_definitions' => $definitions, 'column_defaults' => $defaults, 'indexes' => $indexes,
         'foreign_keys' => $foreign, 'table_options' => $options, 'auto_increment_metadata' => $counter,
         'definition_line_set' => $lines,
-    ]);
+    ];
+    $parsed = true;
+    try {
+        $components += definitionParts($ddl);
+    } catch (Throwable) {
+        $parsed = false;
+    }
+
+    return ['definition_parse' => $parsed, ...array_map(fn ($value) => hash('sha256', encode($value)), $components)];
 }
 
 /** Restore must still match every original SHOW CREATE byte and record. */
@@ -145,7 +240,8 @@ function requireRestored(array $before, array $after, PDO $baseline, PDO $restor
             $left = schemaComponents($baseline, $difference['table']);
             $right = schemaComponents($restored, $difference['table']);
             foreach ($left as $name => $hash) {
-                $difference['checks'][$name] = $hash === $right[$name];
+                $difference['checks'][$name] = $name === 'definition_parse' ? $hash && $right[$name]
+                    : $hash === ($right[$name] ?? null);
             }
         } catch (Throwable) {
             // Keep the original failed comparison even if extra diagnostics fail.
