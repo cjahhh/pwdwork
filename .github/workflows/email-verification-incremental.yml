@@ -1,0 +1,98 @@
+name: Email verification incremental migration
+run-name: Email migration ${{ inputs.operation }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: 'PREVIEW is read-only; APPLY requires its reviewed receipt and verified backup'
+        type: choice
+        default: PREVIEW
+        options: [PREVIEW, APPLY]
+      reviewed_sha:
+        description: 'Full reviewed main commit SHA; must equal dispatched SHA'
+        type: string
+        required: true
+      confirmation:
+        description: 'APPLY only: APPLY email ownership pwdwork_prod'
+        type: string
+        default: ''
+      preview_sha256:
+        description: 'APPLY only: SHA256 of protected-environment approved PREVIEW JSON'
+        type: string
+        default: ''
+      backup_sha256:
+        description: 'APPLY only: SHA256 of protected-environment approved backup evidence JSON'
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: aiven-pwdwork-prod-initialization
+  cancel-in-progress: false
+
+jobs:
+  incremental:
+    # Release hold: remove only in a separately reviewed, explicitly authorized change
+    # after disposable runner integration, approval enforcement and restore proof pass.
+    if: false && github.repository == 'cjahhh/pwdwork' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    # Must be pre-created, main-only, with required reviewers and prevent self-review.
+    # Missing independent review fails the API gate. Independently inspect the
+    # actual environment protections; review history alone cannot prove them.
+    environment: pwdwork-email-migration-${{ inputs.operation == 'APPLY' && 'apply' || 'preview' }}
+    env:
+      OPERATION: ${{ inputs.operation }}
+      REVIEWED_SHA: ${{ inputs.reviewed_sha }}
+      CONFIRMATION: ${{ inputs.confirmation }}
+      PREVIEW_SHA256: ${{ inputs.preview_sha256 }}
+      BACKUP_SHA256: ${{ inputs.backup_sha256 }}
+    steps:
+      - name: Checkout immutable dispatched source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Require separate real human approval before database secrets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EV_APPROVED_PREVIEW: ${{ vars.EV_APPROVED_PREVIEW }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          python3 .github/scripts/email-verification-approval.py
+
+      - name: Run offline safety tests without application secrets
+        run: python3 -B -m unittest discover -s .github/tests -p 'test_email_verification_*.py'
+
+      - name: Build existing runtime without credentials or deployment
+        run: docker build --pull --tag pwdwork-email-incremental:reviewed .
+
+      - name: Exact migration only with independently verified TLS
+        env:
+          EXPECTED_DB_HOST: ${{ vars.AIVEN_EXPECTED_HOST }}
+          EXPECTED_DB_PORT: ${{ vars.AIVEN_EXPECTED_PORT }}
+          EXPECTED_SERVER_UUID: ${{ vars.AIVEN_EXPECTED_SERVER_UUID }}
+          EV_APPROVED_PREVIEW: ${{ vars.EV_APPROVED_PREVIEW }}
+          EV_APPROVED_BACKUP: ${{ vars.EV_APPROVED_BACKUP }}
+          DB_HOST: ${{ secrets.AIVEN_DB_HOST }}
+          DB_PORT: ${{ secrets.AIVEN_DB_PORT }}
+          DB_DATABASE: ${{ secrets.AIVEN_DB_DATABASE }}
+          DB_USERNAME: ${{ secrets.AIVEN_DB_USERNAME }}
+          DB_PASSWORD: ${{ secrets.AIVEN_DB_PASSWORD }}
+          AIVEN_CA_PEM: ${{ secrets.AIVEN_CA_PEM }}
+          APP_KEY: ${{ secrets.AIVEN_APP_KEY }}
+        run: bash .github/scripts/email-verification-incremental.sh
+
+      - name: Retain safe receipt only
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: email-migration-${{ inputs.operation }}-${{ github.run_id }}
+          path: incremental-evidence/receipt.json
+          if-no-files-found: ignore
+          retention-days: 3

@@ -1,10 +1,17 @@
 # Email verification: disposable MySQL rehearsal
 
-Prepared 26 October 2026. **Preparation complete; MySQL rehearsal NOT RUN; production migration NOT APPROVED.**
+Prepared 26 October 2026. Historical preparation findings below describe the local preparation, not a production run. **Subsequent owner update: all 26 GitHub Actions MySQL 8.4.11 rehearsal checks passed. Production migration remains NOT APPROVED.** The successful run has not been independently inspected during incremental-runner preparation.
 
-For a computer without Docker/MySQL tools, the [dedicated-branch GitHub Actions preparation](EMAIL-VERIFICATION-GITHUB-ACTIONS.md) automates this synthetic rehearsal on GitHub-hosted Ubuntu. It includes explicit opt-in triggering, usage/billing guidance, isolated runtime containers and safe evidence. That workflow is prepared locally only and has not been executed.
+For a computer without Docker/MySQL tools, the [dedicated-branch GitHub Actions preparation](EMAIL-VERIFICATION-GITHUB-ACTIONS.md) automates this synthetic rehearsal on GitHub-hosted Ubuntu. It includes explicit opt-in triggering, usage/billing guidance, isolated runtime containers and safe evidence. Retain the owner-reported successful run's immutable evidence. The next gates are documented in the [single-migration production runner and Aiven Free recovery procedure](EMAIL-VERIFICATION-INCREMENTAL-MIGRATION.md): the new runner still needs disposable integration testing, protected approvals and a verified production logical-backup restoration. Aiven Free does not support service forking.
 
 Owner-supplied production facts: Aiven service `mysql-380cabbd`, MySQL **8.4.11**, automated full backups confirmed. These facts were not checked by connecting to Aiven. A completed backup is not yet evidence of a successful restore or an acceptable recovery point.
+
+The [separate incremental-runner safeguard review](EMAIL-VERIFICATION-INCREMENTAL-SAFEGUARDS.md)
+now provides a prepared 32-scenario disposable harness, local offline results,
+and an approval alternative for private repositories without Required reviewers.
+That harness has not run against MySQL here because Docker is unavailable.
+The production workflow has an explicit disabled job condition; no production
+PREVIEW/APPLY or email verification activation is approved by these tests.
 
 No MySQL connection, cloud service creation, image pull/build, migration, production data access, credential request, commit, push or deployment was performed for this preparation. Docker, `mysql` and `mysqldump` were not found on the current shell's PATH. Do not substitute the existing XAMPP database/MariaDB installation.
 

@@ -1,0 +1,81 @@
+name: Disposable incremental migration runner safeguards
+run-name: Disposable incremental runner - ${{ github.sha }}
+
+# Separate from the successful 26-check migration rehearsal; never targets main.
+# Deliberately no pull_request, workflow_dispatch, workflow_call or schedule.
+on:
+  push:
+    branches: [security/email-verification-mysql-rehearsal]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pwdwork-disposable-incremental-runner-rehearsal
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  safeguards:
+    if: >-
+      github.repository == 'cjahhh/pwdwork' &&
+      github.ref == 'refs/heads/security/email-verification-mysql-rehearsal' &&
+      github.event_name == 'push' &&
+      github.run_attempt == 1 &&
+      github.event.deleted == false && github.event.forced == false &&
+      github.event.head_commit.message == '[run-email-verification-incremental-rehearsal]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Checkout exact testing source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Authorize exact opt-in event before building or starting a database
+        id: authorization
+        run: python3 -B .github/scripts/email-verification-incremental-ci.py authorize
+
+      - name: Test approval API responses offline without a token
+        id: offline
+        run: python3 -B -m unittest discover -s .github/tests -p 'test_email_verification_*.py'
+
+      - name: Check runner and harness syntax without booting Laravel
+        id: syntax
+        run: |
+          bash -n .github/scripts/email-verification-incremental-rehearsal.sh
+          php -l .github/scripts/email-verification-incremental-rehearsal.php
+          php -l .github/scripts/email-verification-incremental.php
+          php -l .github/scripts/email-verification-rehearsal.php
+
+      - name: Run exact runner against isolated synthetic MySQL 8.4.11
+        id: harness
+        run: |
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          bash .github/scripts/email-verification-incremental-rehearsal.sh --disposable-only
+
+      - name: Validate evidence and publish sanitized PASS or FAIL summary
+        if: always()
+        env:
+          AUTHORIZATION_OUTCOME: ${{ steps.authorization.outcome }}
+          OFFLINE_OUTCOME: ${{ steps.offline.outcome }}
+          SYNTAX_OUTCOME: ${{ steps.syntax.outcome }}
+          HARNESS_OUTCOME: ${{ steps.harness.outcome }}
+        run: python3 -B .github/scripts/email-verification-incremental-ci.py finalize
+
+      - name: Retain sanitized disposable evidence only
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: incremental-disposable-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/pwdwork-incremental-ci-evidence/report.json
+            ${{ runner.temp }}/pwdwork-incremental-ci-evidence/summary.md
+          if-no-files-found: error
+          retention-days: 1
+          include-hidden-files: false
