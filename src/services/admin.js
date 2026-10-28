@@ -1,5 +1,9 @@
 import api from "./api.js";
 
+export async function fetchAdminDashboard() {
+  return (await api.get("/admin/dashboard")).data;
+}
+
 export async function fetchOverview() {
   return (await api.get("/admin/overview")).data.stats;
 }

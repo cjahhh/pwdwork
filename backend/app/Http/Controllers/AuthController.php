@@ -135,7 +135,7 @@ class AuthController extends Controller
      */
     private function userPayload(User $user): array
     {
-        $user->loadMissing(['applicantProfile', 'employer']);
+        $user->loadMissing('employer');
 
         return [
             'id' => $user->id,

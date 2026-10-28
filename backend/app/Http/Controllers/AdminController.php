@@ -6,11 +6,11 @@ use App\Http\Controllers\Concerns\PaginatesCollections;
 use App\Http\Requests\AdminActionRequest;
 use App\Http\Requests\AdminIndexRequest;
 use App\Models\AdminAuditLog;
-use App\Models\Application;
 use App\Models\Employer;
 use App\Models\JobListing;
 use App\Models\User;
 use App\Models\UserReport;
+use App\Services\AdminDashboardService;
 use App\Services\ModerationService;
 use App\Support\AdminPayload;
 use Illuminate\Http\Request;
@@ -19,19 +19,14 @@ class AdminController extends Controller
 {
     use PaginatesCollections;
 
-    public function overview()
+    public function overview(AdminDashboardService $dashboard)
     {
-        return response()->json(['stats' => [
-            'jobseekers' => User::where('role', 'applicant')->count(),
-            'employers' => User::where('role', 'employer')->count(),
-            'verifiedEmployers' => Employer::where('verification_status', 'verified')->count(),
-            'pendingEmployers' => Employer::where('verification_status', 'pending')->count(),
-            'rejectedEmployers' => Employer::where('verification_status', 'rejected')->count(),
-            'jobListings' => JobListing::count(), 'activeApprovedJobs' => JobListing::publiclyVisible()->count(),
-            'pendingJobs' => JobListing::where('moderation_status', 'pending')->count(),
-            'applications' => Application::count(), 'pendingReports' => UserReport::where('status', 'pending')->count(),
-            'suspendedAccounts' => User::where('status', 'suspended')->count(),
-        ]]);
+        return response()->json(['stats' => $dashboard->statistics()]);
+    }
+
+    public function dashboard(AdminDashboardService $dashboard)
+    {
+        return response()->json($dashboard->dashboard());
     }
 
     public function employers(AdminIndexRequest $request)

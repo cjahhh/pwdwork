@@ -3,7 +3,7 @@ import { useResource } from "../hooks/useResource.js";
 import RequestState from "../components/RequestState.jsx";
 import PageHeader from "../components/PageHeader.jsx";
 import Icon from "../components/Icon.jsx";
-import { fetchOverview, fetchAdminEmployers, fetchAdminJobs, fetchAdminReports, fetchAuditLogs } from "../services/admin.js";
+import { fetchAdminDashboard } from "../services/admin.js";
 
 const cards = [
   ["jobseekers", "Registered jobseekers"], ["employers", "Registered employers"],
@@ -14,14 +14,7 @@ const cards = [
   ["suspendedAccounts", "Suspended accounts"],
 ];
 export default function AdminDashboardPage() {
-  const resource = useResource(async () => {
-    const [stats, employers, jobs, reports, audit] = await Promise.all([
-      fetchOverview(), fetchAdminEmployers({ status: "pending", per_page: 3 }),
-      fetchAdminJobs({ status: "pending", per_page: 3 }), fetchAdminReports({ status: "pending", per_page: 3 }),
-      fetchAuditLogs({ per_page: 3 }),
-    ]);
-    return { stats, employers: employers.employers, jobs: jobs.jobs, reports: reports.reports, audit: audit.logs };
-  });
+  const resource = useResource(fetchAdminDashboard);
   return <section>
     <PageHeader title="Admin dashboard overview" eyebrow="Platform operations" icon="shield" description="Review registrations, publication requests and complaints. Active job counts require a verified, active employer." actions={<button className="button-secondary" type="button" onClick={resource.reload} disabled={resource.loading}>Refresh overview</button>} />
     <RequestState resource={resource} />

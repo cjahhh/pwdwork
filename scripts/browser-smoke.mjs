@@ -68,7 +68,7 @@ async function requireFreePort(port, host) {
 }
 class CDP {
   constructor(socket) {
-    this.socket = socket; this.id = 0; this.pending = new Map(); this.exceptions = [];
+    this.socket = socket; this.id = 0; this.pending = new Map(); this.exceptions = []; this.adminRequests = []; this.pendingRequests = new Map();
     socket.onmessage = ({ data }) => {
       const message = JSON.parse(data);
       if (message.id) {
@@ -79,6 +79,13 @@ class CDP {
       }
       if (message.method === "Runtime.exceptionThrown") this.exceptions.push(message.params.exceptionDetails.text);
       if (message.method === "Page.loadEventFired") this.loadSerial = (this.loadSerial || 0) + 1;
+      if (message.method === 'Network.requestWillBeSent' && message.params.request.url.startsWith(frontendOrigin + '/')) {
+        this.pendingRequests.set(message.params.requestId, new URL(message.params.request.url).pathname);
+      }
+      if (['Network.loadingFinished', 'Network.loadingFailed'].includes(message.method)) this.pendingRequests.delete(message.params.requestId);
+      if (message.method === 'Network.requestWillBeSent' && message.params.request.url.startsWith(frontendOrigin + '/api/admin/')) {
+        this.adminRequests.push(new URL(message.params.request.url).pathname);
+      }
       if (message.method === 'Page.javascriptDialogOpening' && typeof this.dialogDecision === 'boolean') {
         void this.send('Page.handleJavaScriptDialog', { accept: this.dialogDecision });
       }
@@ -164,6 +171,36 @@ async function logout() {
   await check("(location.pathname === '/' || location.pathname === '/login') && ![...document.querySelectorAll('header button')].some(el => el.textContent.trim() === 'Log out')", "logout redirect");
 }
 function passed(name) { console.log("PASS " + name); }
+
+async function verifyDashboardRequests() {
+  const ready = "document.querySelectorAll('.admin-stats dd').length === 11 && ![...document.querySelectorAll('main button')].find(el => el.textContent === 'Refresh overview')?.disabled";
+  await check(ready, 'initial dashboard ready');
+  client.adminRequests = [];
+  await go('/admin');
+  await check(ready, 'dashboard navigation complete');
+  assert.deepEqual(client.adminRequests, ['/api/admin/dashboard'], 'One dashboard request per navigation, without the five legacy requests');
+  assert.ok(await client.evaluate("document.body.innerText.includes('Pending Browser Company') && document.querySelectorAll('main section.panel').length === 4"), 'Existing preview content and four queues remain visible');
+  assert.deepEqual(await client.evaluate("[...document.querySelectorAll('main section.panel a')].map(el => el.getAttribute('href'))"),
+    ['/admin/employers?status=pending', '/admin/jobs?status=pending', '/admin/reports?status=pending', '/admin/audit'], 'Independent filtered tabs remain linked');
+  client.adminRequests = [];
+  await click('Refresh overview');
+  await waitFor(() => client.adminRequests.length > 0, 'dashboard refresh requested');
+  await check(ready, 'dashboard refresh complete');
+  assert.deepEqual(client.adminRequests, ['/api/admin/dashboard'], 'One dashboard request per refresh');
+  await client.send('Network.setBlockedURLs', { urls: [frontendOrigin + '/api/admin/dashboard*'] });
+  try {
+    await click('Refresh overview');
+    await check("document.body.innerText.includes('Cannot reach the server') && document.querySelectorAll('.admin-stats dd').length === 0 && document.querySelectorAll('main section.panel').length === 0", 'Failure shows an error without stale partial queues or fabricated zero statistics');
+  } finally {
+    await client.send('Network.setBlockedURLs', { urls: [] });
+  }
+  client.adminRequests = [];
+  await click('Try again');
+  await check(ready, 'dashboard retry complete');
+  assert.deepEqual(client.adminRequests, ['/api/admin/dashboard'], 'Retry uses one request without a legacy fan-out fallback');
+  assert.deepEqual(client.exceptions, [], 'No uncaught dashboard errors');
+  passed('Dashboard single-request navigation, refresh, complete preview rendering, failure and retry');
+}
 
 async function verifyMobileMenu() {
   await client.send('Emulation.setDeviceMetricsOverride', { width: 375, height: 950, deviceScaleFactor: 1, mobile: false });
@@ -479,6 +516,9 @@ try {
 
   if (process.env.PWDWORK_SMOKE_UI_ONLY) {
     await reviewUI();
+  } else if (process.env.PWDWORK_SMOKE_DASHBOARD_ONLY) {
+    await login('admin@browser.example');
+    await verifyDashboardRequests();
   } else {
 
   if (!process.env.PWDWORK_SMOKE_PHASE4_ONLY && !process.env.PWDWORK_SMOKE_PHASE5_ONLY && !process.env.PWDWORK_SMOKE_PHASE6_ONLY) {
@@ -600,6 +640,7 @@ try {
   await login("admin@browser.example");
   await go("/admin");
   await check("document.body.innerText.includes('Registered employers') && document.querySelectorAll('.admin-stats dd').length === 11", "live admin overview");
+  await verifyDashboardRequests();
   await go("/admin/employers?status=pending");
   await check("document.body.innerText.includes('Pending Browser Company')", "pending employer queue");
   await reviewFirst("employer");
@@ -927,6 +968,7 @@ try {
   console.log("Browser smoke checks passed. Only isolated temporary SQLite fixtures were used.");
   }
 } catch (error) {
+  if (client) console.error('Pending local request paths: ' + JSON.stringify([...client.pendingRequests.values()]));
   if (client) {
     try { console.error((await client.evaluate("document.body.innerText")).slice(0, 2500)); } catch { /* Browser may have exited. */ }
   }

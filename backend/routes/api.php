@@ -77,6 +77,7 @@ Route::middleware(['auth:sanctum', 'role:applicant,employer,admin'])->group(func
         return response()->json(['message' => 'Listing submitted for moderation.']);
     })->middleware(['role:employer', 'throttle:10,1']);
     Route::prefix('admin')->middleware('role:admin')->group(function () {
+        Route::get('/dashboard', [AdminController::class, 'dashboard']);
         Route::get('/overview', [AdminController::class, 'overview']);
         Route::get('/employers', [AdminController::class, 'employers']);
         Route::get('/employers/{employer}', [AdminController::class, 'employer']);
