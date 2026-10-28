@@ -30,7 +30,7 @@ OPERATIONS = {
     'mysql_ready', 'database_reset', 'database_restore', 'synthetic_backup', 'case_evidence',
     'container_create', 'container_network', 'container_start', 'container_exit', 'helper_exit',
     'container_boundary', 'network_boundary', 'load_runner', 'fixture_credentials',
-    'connect_target', 'connect_baseline', 'baseline_snapshot', 'restore_compare', 'baseline_state',
+    'connect_target', 'connect_baseline', 'baseline_snapshot', 'restored_snapshot', 'restore_compare', 'baseline_state',
     'original_snapshot', 'server_identity', 'evidence_fixture', 'prepare_scenario', 'before_snapshot',
     'runner_start', 'runner_output', 'runner_receipt', 'preview_result', 'apply_result',
     'postflight_state', 'preservation', 'repeat_result', 'expected_rejection', 'preview_rejection',
@@ -43,6 +43,16 @@ RUNNER_PHASES = {'authorization', 'reviewed_source', 'backup_proof', 'tls_connec
                  'original_snapshot', 'laravel_runtime', 'compiled_ddl', 'preview_evidence',
                  'final_preflight', 'single_migration', 'postflight'}
 MYSQL_CODES = {1044, 1045, 1049, 1054, 1060, 1142, 1146, 1205, 2002, 2003, 2006, 2013, 2026}
+TABLE_NAMES = {'users', 'password_reset_tokens', 'sessions', 'cache', 'cache_locks', 'jobs', 'job_batches',
+               'failed_jobs', 'personal_access_tokens', 'accommodations', 'applicant_profiles', 'employers',
+               'job_listings', 'applicant_accommodation', 'job_listing_accommodation', 'applications',
+               'saved_jobs', 'user_notifications', 'user_reports', 'admin_audit_logs', 'accommodation_requests',
+               'accommodation_request_messages', 'accommodation_request_events', 'resumes',
+               'resume_application_shares', 'migrations'}
+COMPARISON_CHECKS = {'table_inventory', 'table_order', 'snapshot_structure', 'definition', 'row_count',
+                     'data_fingerprint', 'migration_history', 'primary_key', 'column_definitions',
+                     'column_defaults', 'indexes', 'foreign_keys', 'table_options',
+                     'auto_increment_metadata', 'definition_line_set', 'metadata_read'}
 
 
 def demand(condition):
@@ -80,11 +90,25 @@ def load_json(path):
     return json.loads(path.read_text(encoding='utf-8'), object_pairs_hook=unique)
 
 
+def validate_comparison(value):
+    demand(isinstance(value, dict) and set(value) == {'table', 'checks', 'before_rows', 'after_rows'})
+    demand(value['table'] is None or value['table'] in TABLE_NAMES)
+    checks = value['checks']
+    demand(isinstance(checks, dict) and bool(checks) and set(checks) <= COMPARISON_CHECKS)
+    demand(all(type(outcome) is bool for outcome in checks.values()) and not all(checks.values()))
+    for key in ('before_rows', 'after_rows'):
+        demand(value[key] is None or (type(value[key]) is int and 0 <= value[key] <= 2**53 - 1))
+    return dict(value)
+
+
 def validate_diagnostic(value):
-    demand(isinstance(value, dict) and set(value) == {'operation', 'category', 'runner_phase', 'mysql_code'})
+    expected = {'operation', 'category', 'runner_phase', 'mysql_code'}
+    demand(isinstance(value, dict) and set(value) in (expected, expected | {'comparison'}))
     demand(value['operation'] in OPERATIONS and value['category'] in CATEGORIES)
     demand(value['runner_phase'] is None or value['runner_phase'] in RUNNER_PHASES)
     demand(value['mysql_code'] is None or (type(value['mysql_code']) is int and value['mysql_code'] in MYSQL_CODES))
+    if 'comparison' in value:
+        validate_comparison(value['comparison'])
     return dict(value)
 
 
@@ -176,6 +200,12 @@ def finalize(temp, env):
         lines[8:8] = [f'Diagnostic: operation `{diagnostic["operation"]}`; category `{diagnostic["category"]}`; '
                       f'runner phase `{diagnostic["runner_phase"]}`; native code `{diagnostic["mysql_code"]}`.', '']
     lines += [f'| {case} | {checks.get(case, "FAIL" if case == phase else "NOT RUN")} |' for case in CASES]
+    if diagnostic is not None and 'comparison' in diagnostic:
+        comparison = diagnostic['comparison']
+        lines += ['', f'Comparison table: `{comparison["table"]}`; rows before: `{comparison["before_rows"]}`; '
+                  f'rows after: `{comparison["after_rows"]}`.', '',
+                  '| Comparison category | Equal |', '| --- | --- |']
+        lines += [f'| {name} | {str(equal).lower()} |' for name, equal in comparison['checks'].items()]
     summary = '\n'.join(lines) + '\n'
     (destination / 'summary.md').write_text(summary, encoding='utf-8')
     return passed, summary

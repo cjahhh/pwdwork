@@ -45,10 +45,115 @@ const CASES = [
 ];
 
 const OPERATIONS = ['container_boundary', 'network_boundary', 'load_runner', 'fixture_credentials',
-    'connect_target', 'connect_baseline', 'baseline_snapshot', 'restore_compare', 'baseline_state',
+    'connect_target', 'connect_baseline', 'baseline_snapshot', 'restored_snapshot', 'restore_compare', 'baseline_state',
     'original_snapshot', 'server_identity', 'evidence_fixture', 'prepare_scenario', 'before_snapshot',
     'runner_start', 'runner_output', 'runner_receipt', 'preview_result', 'apply_result',
     'postflight_state', 'preservation', 'repeat_result', 'expected_rejection', 'preview_rejection', 'baseline_preservation'];
+
+// Display names only. Unexpected table names are never reflected into evidence.
+const TABLE_NAMES = ['users', 'password_reset_tokens', 'sessions', 'cache', 'cache_locks', 'jobs', 'job_batches',
+    'failed_jobs', 'personal_access_tokens', 'accommodations', 'applicant_profiles', 'employers', 'job_listings',
+    'applicant_accommodation', 'job_listing_accommodation', 'applications', 'saved_jobs', 'user_notifications',
+    'user_reports', 'admin_audit_logs', 'accommodation_requests', 'accommodation_request_messages',
+    'accommodation_request_events', 'resumes', 'resume_application_shares', 'migrations'];
+
+class RestoreComparisonFailure extends RuntimeException
+{
+    public function __construct(public readonly array $comparison)
+    {
+        parent::__construct('disposable_restore_comparison_failed');
+    }
+}
+
+function comparisonReport(?string $table, array $checks, ?int $beforeRows, ?int $afterRows): array
+{
+    return ['table' => in_array($table, TABLE_NAMES, true) ? $table : null, 'checks' => $checks,
+        'before_rows' => $beforeRows, 'after_rows' => $afterRows];
+}
+
+/** Same strict equality as before; diagnostic output contains no fingerprints. */
+function restoreDifference(array $before, array $after): ?array
+{
+    if ($before === $after) {
+        return null;
+    }
+    if (array_keys($before) !== array_keys($after)) {
+        $left = array_keys($before);
+        $right = array_keys($after);
+        sort($left);
+        sort($right);
+
+        return comparisonReport(null, ['table_inventory' => $left === $right, 'table_order' => false], null, null);
+    }
+    foreach ($before as $table => $left) {
+        $right = $after[$table];
+        if ($left !== $right) {
+            $checks = ['table_inventory' => true, 'snapshot_structure' => array_keys($left) === array_keys($right)
+                && array_keys($left['records']) === array_keys($right['records']),
+                'definition' => $left['definition'] === $right['definition'],
+                'row_count' => $left['records']['rows'] === $right['records']['rows'],
+                'data_fingerprint' => $left['records']['data_sha256'] === $right['records']['data_sha256']];
+            if ($table === 'migrations') {
+                $checks['migration_history'] = $left['records'] === $right['records'];
+            }
+
+            return comparisonReport($table, $checks, $left['records']['rows'], $right['records']['rows']);
+        }
+    }
+
+    throw new RuntimeException('disposable_snapshot_structure_rejected');
+}
+
+/** Private diagnostic hashes only; never change the raw DDL or acceptance rule. */
+function schemaComponents(PDO $pdo, string $table): array
+{
+    demand(in_array($table, TABLE_NAMES, true));
+    $fields = columns($pdo, $table);
+    $defaults = array_map(fn ($field) => [$field['COLUMN_NAME'], $field['COLUMN_DEFAULT']], $fields);
+    $definitions = array_map(function ($field) {
+        unset($field['COLUMN_DEFAULT']);
+
+        return $field;
+    }, $fields);
+    $indexes = rows($pdo, 'SELECT INDEX_NAME, NON_UNIQUE, SEQ_IN_INDEX, COLUMN_NAME, COLLATION, SUB_PART, INDEX_TYPE, IS_VISIBLE, EXPRESSION FROM information_schema.STATISTICS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=? ORDER BY INDEX_NAME,SEQ_IN_INDEX', [$table]);
+    $foreign = rows($pdo, "SELECT k.CONSTRAINT_NAME,k.COLUMN_NAME,k.ORDINAL_POSITION,IF(k.REFERENCED_TABLE_SCHEMA=DATABASE(),'local','external') AS reference_scope,IF(k.REFERENCED_TABLE_SCHEMA=DATABASE(),NULL,k.REFERENCED_TABLE_SCHEMA) AS external_schema,k.REFERENCED_TABLE_NAME,k.REFERENCED_COLUMN_NAME,r.UPDATE_RULE,r.DELETE_RULE FROM information_schema.KEY_COLUMN_USAGE k JOIN information_schema.REFERENTIAL_CONSTRAINTS r ON r.CONSTRAINT_SCHEMA=k.CONSTRAINT_SCHEMA AND r.CONSTRAINT_NAME=k.CONSTRAINT_NAME AND r.TABLE_NAME=k.TABLE_NAME WHERE k.TABLE_SCHEMA=DATABASE() AND k.TABLE_NAME=? ORDER BY k.CONSTRAINT_NAME,k.ORDINAL_POSITION", [$table]);
+    $metadata = array_values(array_filter(inventory($pdo), fn ($item) => $item['TABLE_NAME'] === $table));
+    demand(count($metadata) === 1);
+    $options = $metadata[0];
+    $counter = $options['AUTO_INCREMENT'];
+    unset($options['TABLE_NAME'], $options['AUTO_INCREMENT']);
+    $ddl = $pdo->query('SHOW CREATE TABLE '.identifier($table))->fetch(PDO::FETCH_NUM)[1];
+    $lines = array_map(fn ($line) => hash('sha256', $line), explode("\n", $ddl));
+    sort($lines);
+
+    return array_map(fn ($value) => hash('sha256', encode($value)), [
+        'column_definitions' => $definitions, 'column_defaults' => $defaults, 'indexes' => $indexes,
+        'foreign_keys' => $foreign, 'table_options' => $options, 'auto_increment_metadata' => $counter,
+        'definition_line_set' => $lines,
+    ]);
+}
+
+/** Restore must still match every original SHOW CREATE byte and record. */
+function requireRestored(array $before, array $after, PDO $baseline, PDO $restored): void
+{
+    $difference = restoreDifference($before, $after);
+    if ($difference === null) {
+        return;
+    }
+    if ($difference['table'] !== null && ($difference['checks']['definition'] ?? true) === false) {
+        try {
+            $left = schemaComponents($baseline, $difference['table']);
+            $right = schemaComponents($restored, $difference['table']);
+            foreach ($left as $name => $hash) {
+                $difference['checks'][$name] = $hash === $right[$name];
+            }
+        } catch (Throwable) {
+            // Keep the original failed comparison even if extra diagnostics fail.
+            $difference['checks']['metadata_read'] = false;
+        }
+    }
+    throw new RestoreComparisonFailure($difference);
+}
 
 function operation(string $value): void
 {
@@ -76,7 +181,12 @@ function diagnostic(Throwable $error): array
         }
     }
 
-    return ['operation' => $op, 'category' => $details['category'], 'runner_phase' => $runnerPhase, 'mysql_code' => $details['mysql_code']];
+    $result = ['operation' => $op, 'category' => $details['category'], 'runner_phase' => $runnerPhase, 'mysql_code' => $details['mysql_code']];
+    if ($error instanceof RestoreComparisonFailure) {
+        $result['comparison'] = $error->comparison;
+    }
+
+    return $result;
 }
 
 function demand(bool $condition): void
@@ -106,7 +216,9 @@ function fullSnapshot(PDO $pdo): array
         $name = identifier($table['TABLE_NAME']);
         $fields = array_map(fn ($field) => identifier($field['COLUMN_NAME']), columns($pdo, $table['TABLE_NAME']));
         $primary = array_column(rows($pdo, "SELECT COLUMN_NAME FROM information_schema.STATISTICS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=? AND INDEX_NAME='PRIMARY' ORDER BY SEQ_IN_INDEX", [$table['TABLE_NAME']]), 'COLUMN_NAME');
-        demand($primary !== []);
+        if ($primary === []) {
+            throw new RestoreComparisonFailure(comparisonReport($table['TABLE_NAME'], ['primary_key' => false], null, null));
+        }
         $result[$table['TABLE_NAME']] = [
             'definition' => hash('sha256', $pdo->query('SHOW CREATE TABLE '.$name)->fetch(PDO::FETCH_NUM)[1]),
             'records' => hashStream(rows($pdo, 'SELECT '.implode(',', $fields).' FROM '.$name.' ORDER BY '.implode(',', array_map('Pwdwork\\EmailRehearsal\\identifier', $primary)))),
@@ -162,8 +274,10 @@ function execute(string $case, #[\SensitiveParameter] string $password, #[\Sensi
     operation('baseline_snapshot');
     $baselineFull = fullSnapshot($baseline);
     // Every scenario first proves the exact synthetic dump restored correctly.
+    operation('restored_snapshot');
+    $restoredFull = fullSnapshot($pdo);
     operation('restore_compare');
-    demand($baselineFull === fullSnapshot($pdo));
+    requireRestored($baselineFull, $restoredFull, $baseline, $pdo);
     operation('baseline_state');
     state($pdo, 0, 0);
     operation('original_snapshot');

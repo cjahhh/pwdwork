@@ -227,6 +227,66 @@ class IncrementalCiSafetyTest(unittest.TestCase):
             passed, _ = ci.finalize(temp, self.env())
             self.assertTrue(passed)
 
+    def comparison(self):
+        return dict(table='users', before_rows=5, after_rows=5,
+                    checks=dict(definition=False, row_count=True, data_fingerprint=True,
+                                column_definitions=True, column_defaults=True, indexes=True,
+                                foreign_keys=True, auto_increment_metadata=False))
+
+    def test_restore_comparison_survives_actual_cleanup_capture_and_final_summary(self):
+        root = Path(__file__).resolve().parents[2]
+        shell = (root / '.github/scripts/email-verification-incremental-rehearsal.sh').read_text()
+        body = re.findall(r"(?ms)^[ \t]*python3[^\n]*<<'PY'\n(.*?)^PY\s*$", shell)[0]
+        detail = dict(operation='restore_compare', category='validation', runner_phase=None,
+                      mysql_code=None, comparison=self.comparison())
+        with tempfile.TemporaryDirectory() as directory:
+            temp = Path(directory)
+            evidence = self.write(temp)
+            helper = temp / 'private-result.json'
+            helper.write_text(json.dumps(dict(status='FAIL', phase='disposable_runner_assertion', diagnostic=detail)))
+            result = subprocess.run([sys.executable, '-B', '-c', body, str(evidence), 'preview_readonly', '1',
+                                     str(helper), 'helper_exit', 'helper'], cwd=root, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 1)
+            self.assertEqual(result.stderr, '')
+            passed, summary = ci.finalize(temp, dict(self.env(), HARNESS_OUTCOME='failure'))
+            self.assertFalse(passed)
+            final = json.loads(self.read_final(temp))
+            self.assertEqual(final['diagnostic'], detail)
+            self.assertEqual(final['passed_scenarios'], 0)
+            self.assertIn('Comparison table: `users`', summary)
+            self.assertIn('| auto_increment_metadata | false |', summary)
+            self.assertIn('| data_fingerprint | true |', summary)
+
+    def test_comparison_schema_rejects_private_names_values_hashes_and_non_boolean_outcomes(self):
+        for changed in (dict(self.comparison(), table='synthetic-private-table'),
+                        dict(self.comparison(), before_rows='synthetic-private-value'),
+                        dict(self.comparison(), before_rows=True), dict(self.comparison(), after_rows=-1),
+                        dict(self.comparison(), raw_ddl='synthetic-private-definition'),
+                        dict(self.comparison(), checks={'definition': 'synthetic-private-hash'}),
+                        dict(self.comparison(), checks={'synthetic-private-field': False}),
+                        dict(self.comparison(), checks={'definition': True})):
+            with self.subTest(changed=changed), self.assertRaises(ValueError):
+                ci.validate_comparison(changed)
+
+    def test_invalid_nested_comparison_is_redacted_from_artifact_and_summary(self):
+        detail = dict(operation='restore_compare', category='validation', runner_phase=None, mysql_code=None,
+                      comparison=dict(self.comparison(), raw_default='synthetic-private-password'))
+        with tempfile.TemporaryDirectory() as directory:
+            temp = Path(directory)
+            self.write(temp, dict(self.report(), status='FAIL', phase='preview_readonly', checks=[], diagnostic=detail))
+            passed, summary = ci.finalize(temp, dict(self.env(), HARNESS_OUTCOME='failure'))
+            self.assertFalse(passed)
+            final = self.read_final(temp)
+            self.assertNotIn('synthetic-private', summary + final)
+            self.assertNotIn('comparison', json.loads(final).get('diagnostic', {}))
+
+    def test_all_reviewed_table_names_and_safe_comparison_categories_are_accepted(self):
+        for name in ci.TABLE_NAMES:
+            with self.subTest(table=name):
+                ci.validate_comparison(dict(self.comparison(), table=name))
+        ci.validate_comparison(dict(table=None, before_rows=None, after_rows=None,
+                                    checks={key: False for key in ci.COMPARISON_CHECKS}))
+
 
 if __name__ == '__main__':
     unittest.main()
