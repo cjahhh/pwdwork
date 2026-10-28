@@ -12,6 +12,7 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Monolog\Handler\NullHandler;
 use PDO;
+use PDOException;
 use RuntimeException;
 use Throwable;
 
@@ -35,6 +36,31 @@ const DDL = [
 ];
 
 const PHASES = ['authorization', 'reviewed_source', 'backup_proof', 'tls_connection', 'schema_history', 'original_snapshot', 'laravel_runtime', 'compiled_ddl', 'preview_evidence', 'final_preflight', 'single_migration', 'postflight'];
+const MYSQL_CODES = [1044, 1045, 1049, 1054, 1060, 1142, 1146, 1205, 2002, 2003, 2006, 2013, 2026];
+const FAILURE_CATEGORIES = ['mysql_permissions', 'mysql_schema', 'mysql_lock', 'mysql_connectivity', 'tls', 'database', 'invalid_json', 'validation', 'php_runtime', 'unexpected'];
+
+/** Classify by type/native code only. Never inspect or publish exception text. */
+function failureDetails(?Throwable $error): array
+{
+    $native = $error instanceof PDOException ? ($error->errorInfo[1] ?? null) : null;
+    $native = is_int($native) && in_array($native, MYSQL_CODES, true) ? $native : null;
+    $category = match (true) {
+        $error instanceof PDOException => match ($native) {
+            1044, 1045, 1142 => 'mysql_permissions',
+            1049, 1054, 1060, 1146 => 'mysql_schema',
+            1205 => 'mysql_lock',
+            2002, 2003, 2006, 2013 => 'mysql_connectivity',
+            2026 => 'tls',
+            default => 'database',
+        },
+        $error instanceof \JsonException => 'invalid_json',
+        $error instanceof RuntimeException => 'validation',
+        $error instanceof \Error => 'php_runtime',
+        default => 'unexpected',
+    };
+
+    return ['category' => $category, 'mysql_code' => $native];
+}
 
 function phase(string $stage): void
 {
@@ -42,12 +68,12 @@ function phase(string $stage): void
     $GLOBALS['ev_incremental_phase'] = $stage;
 }
 
-function safeFailure(): array
+function safeFailure(?Throwable $error = null): array
 {
     $stage = $GLOBALS['ev_incremental_phase'] ?? 'authorization';
 
     return ['status' => 'FAIL', 'phase' => in_array($stage, PHASES, true) ? $stage : 'authorization',
-        'action' => 'STOP; no retry, rollback or automatic repair. Inspect schema/history privately; follow the recovery runbook.'];
+        'action' => 'STOP; no retry, rollback or automatic repair. Inspect schema/history privately; follow the recovery runbook.'] + failureDetails($error);
 }
 
 function demand(bool $condition, string $code): void
@@ -354,8 +380,8 @@ function main(): int
         $env = getenv();
         $result = execute($env, '/run/ev-source');
         $status = 0;
-    } catch (Throwable) {
-        $result = safeFailure();
+    } catch (Throwable $error) {
+        $result = safeFailure($error);
     }
     ob_end_clean();
     // The only output is fixed-vocabulary status and a safe receipt. No raw exception.

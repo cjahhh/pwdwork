@@ -7,13 +7,17 @@ declare(strict_types=1);
 namespace Pwdwork\EmailIncrementalLab;
 
 use const Pwdwork\EmailIncremental\DDL;
+use const Pwdwork\EmailIncremental\FAILURE_CATEGORIES;
 use const Pwdwork\EmailIncremental\MIGRATION_SHA;
+use const Pwdwork\EmailIncremental\MYSQL_CODES;
+use const Pwdwork\EmailIncremental\PHASES;
 use const Pwdwork\EmailRehearsal\MIGRATION;
 
 use PDO;
 use RuntimeException;
 use Throwable;
 
+use function Pwdwork\EmailIncremental\failureDetails;
 use function Pwdwork\EmailIncremental\hashStream;
 use function Pwdwork\EmailIncremental\schemaHash;
 use function Pwdwork\EmailIncremental\snapshot;
@@ -39,6 +43,41 @@ const CASES = [
     'schema_drift' => 'preview_evidence', 'advisory_lock' => 'tls_connection',
     'enrollment_enabled' => 'authorization', 'rerun' => 'authorization',
 ];
+
+const OPERATIONS = ['container_boundary', 'network_boundary', 'load_runner', 'fixture_credentials',
+    'connect_target', 'connect_baseline', 'baseline_snapshot', 'restore_compare', 'baseline_state',
+    'original_snapshot', 'server_identity', 'evidence_fixture', 'prepare_scenario', 'before_snapshot',
+    'runner_start', 'runner_output', 'runner_receipt', 'preview_result', 'apply_result',
+    'postflight_state', 'preservation', 'repeat_result', 'expected_rejection', 'preview_rejection', 'baseline_preservation'];
+
+function operation(string $value): void
+{
+    demand(in_array($value, OPERATIONS, true));
+    $GLOBALS['ev_lab_operation'] = $value;
+}
+
+function diagnostic(Throwable $error): array
+{
+    $op = $GLOBALS['ev_lab_operation'] ?? 'container_boundary';
+    $op = in_array($op, OPERATIONS, true) ? $op : 'container_boundary';
+    $details = function_exists('Pwdwork\\EmailIncremental\\failureDetails')
+        ? failureDetails($error) : ['category' => $error instanceof RuntimeException ? 'validation' : 'php_runtime', 'mysql_code' => null];
+    if (in_array($op, ['runner_start', 'runner_output', 'runner_receipt'], true)) {
+        $details = ['category' => 'runner_protocol', 'mysql_code' => null];
+    }
+    $runnerPhase = null;
+    if (in_array($op, ['preview_result', 'apply_result', 'repeat_result', 'expected_rejection', 'preview_rejection'], true)) {
+        $failure = $GLOBALS['ev_lab_runner_failure'] ?? null;
+        if (is_array($failure) && in_array($failure['phase'] ?? null, PHASES, true)
+            && in_array($failure['category'] ?? null, FAILURE_CATEGORIES, true)
+            && (($failure['mysql_code'] ?? null) === null || in_array($failure['mysql_code'], MYSQL_CODES, true))) {
+            $details = ['category' => $failure['category'], 'mysql_code' => $failure['mysql_code']];
+            $runnerPhase = $failure['phase'];
+        }
+    }
+
+    return ['operation' => $op, 'category' => $details['category'], 'runner_phase' => $runnerPhase, 'mysql_code' => $details['mysql_code']];
+}
 
 function demand(bool $condition): void
 {
@@ -80,6 +119,8 @@ function fullSnapshot(PDO $pdo): array
 /** A fresh process executes the byte-identical runner's actual main()/execute(). */
 function runner(array $env): array
 {
+    operation('runner_start');
+    $GLOBALS['ev_lab_runner_failure'] = null;
     $process = proc_open([PHP_BINARY, '/run/ev-source/.github/scripts/email-verification-incremental.php'],
         [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, '/var/www/backend', $env);
     demand(is_resource($process));
@@ -89,14 +130,20 @@ function runner(array $env): array
     $errors = stream_get_contents($pipes[2]);
     fclose($pipes[2]);
     $code = proc_close($process);
+    operation('runner_output');
     demand($errors === '' && strlen($output) < 4000);
+    operation('runner_receipt');
     $receipt = json_decode($output, true, flags: JSON_THROW_ON_ERROR);
     demand(is_array($receipt));
     if ($code !== 0) {
         demand($code === 1 && $receipt === [
             'status' => 'FAIL', 'phase' => $receipt['phase'],
             'action' => 'STOP; no retry, rollback or automatic repair. Inspect schema/history privately; follow the recovery runbook.',
+            'category' => $receipt['category'] ?? null, 'mysql_code' => $receipt['mysql_code'] ?? null,
         ]);
+        demand(in_array($receipt['phase'], PHASES, true) && in_array($receipt['category'], FAILURE_CATEGORIES, true)
+            && ($receipt['mysql_code'] === null || in_array($receipt['mysql_code'], MYSQL_CODES, true)));
+        $GLOBALS['ev_lab_runner_failure'] = $receipt;
     } else {
         demand(array_keys($receipt) === ['format', 'status', 'operation', 'sha', 'run_id', 'server_uuid', 'migration_sha256', 'schema_sha256', 'created_utc', 'existing_records_preserved']);
         demand($receipt['status'] === 'PASS' && $receipt['migration_sha256'] === MIGRATION_SHA);
@@ -108,13 +155,20 @@ function runner(array $env): array
 function execute(string $case, #[\SensitiveParameter] string $password, #[\SensitiveParameter] string $key): void
 {
     demand(array_key_exists($case, CASES));
+    operation('connect_target');
     $pdo = connect('pwdwork_prod', $password);
+    operation('connect_baseline');
     $baseline = connect('pwdwork_ev_rehearsal', $password);
+    operation('baseline_snapshot');
     $baselineFull = fullSnapshot($baseline);
     // Every scenario first proves the exact synthetic dump restored correctly.
+    operation('restore_compare');
     demand($baselineFull === fullSnapshot($pdo));
+    operation('baseline_state');
     state($pdo, 0, 0);
+    operation('original_snapshot');
     $original = snapshot($pdo);
+    operation('server_identity');
     $uuid = $pdo->query('SELECT @@server_uuid')->fetchColumn();
     $sha = str_repeat('a', 40); // Deliberately fictional; never production approval.
     $env = [
@@ -129,6 +183,7 @@ function execute(string $case, #[\SensitiveParameter] string $password, #[\Sensi
         'DB_PORT' => '3306', 'EXPECTED_DB_PORT' => '3306', 'DB_DATABASE' => 'pwdwork_prod',
         'DB_USERNAME' => 'pwdwork_rehearsal', 'DB_PASSWORD' => $password, 'EXPECTED_SERVER_UUID' => $uuid,
     ];
+    operation('evidence_fixture');
     $receipt = ['format' => 1, 'status' => 'PASS', 'operation' => 'PREVIEW', 'sha' => $sha,
         'run_id' => '900001', 'server_uuid' => $uuid, 'migration_sha256' => MIGRATION_SHA,
         'schema_sha256' => schemaHash($original), 'created_utc' => gmdate('Y-m-d\TH:i:s\Z')];
@@ -144,11 +199,13 @@ function execute(string $case, #[\SensitiveParameter] string $password, #[\Sensi
     // Positive APPLY must consume an actual PREVIEW receipt from this runner.
     if ($case === 'apply_success') {
         [$code, $receipt] = runner(array_replace($env, ['OPERATION' => 'PREVIEW', 'GITHUB_RUN_ID' => '900001']));
+        operation('preview_result');
         demand($code === 0 && fullSnapshot($baseline) === fullSnapshot($pdo));
     }
     if (in_array($case, ['preview_readonly', 'preview_unapproved'], true)) {
         $env['OPERATION'] = 'PREVIEW';
     }
+    operation('prepare_scenario');
     switch ($case) {
         case 'preview_unapproved': case 'apply_unapproved': unset($env['EV_APPROVAL_VERIFIED']);
             break;
@@ -212,22 +269,32 @@ function execute(string $case, #[\SensitiveParameter] string $password, #[\Sensi
     } elseif ($case === 'preview_hash') {
         $env['PREVIEW_SHA256'] = str_repeat('0', 64);
     }
+    operation('before_snapshot');
     $before = fullSnapshot($pdo);
     [$code, $result] = runner($env);
     if ($case === 'apply_success') {
+        operation('apply_result');
         demand($code === 0 && $result['operation'] === 'APPLY' && $result['existing_records_preserved'] === true);
+        operation('postflight_state');
         state($pdo, 3, 1);
+        operation('preservation');
         demand($original === snapshot($pdo));
         $complete = fullSnapshot($pdo);
         // A second authorized invocation must stop without altering completed state.
         [$repeatCode, $repeat] = runner($env);
+        operation('repeat_result');
         demand($repeatCode === 1 && $repeat['phase'] === 'schema_history' && fullSnapshot($pdo) === $complete);
     } elseif ($case === 'preview_readonly') {
+        operation('preview_result');
         demand($code === 0 && $result['operation'] === 'PREVIEW' && $result['existing_records_preserved'] === null);
+        operation('postflight_state');
         state($pdo, 0, 0);
+        operation('preservation');
         demand(fullSnapshot($pdo) === $before);
     } else {
+        operation('expected_rejection');
         demand($code === 1 && $result['status'] === 'FAIL' && $result['phase'] === CASES[$case]);
+        operation('preservation');
         demand(fullSnapshot($pdo) === $before);
         // Shared authorization/target/source/schema guards must protect PREVIEW too.
         if (in_array($case, ['wrong_database', 'wrong_host', 'wrong_port', 'wrong_uuid', 'wrong_ca', 'wrong_tls_hostname',
@@ -235,10 +302,13 @@ function execute(string $case, #[\SensitiveParameter] string $password, #[\Sensi
             'unrecorded', 'already_applied', 'history_missing', 'history_unknown', 'history_duplicate',
             'advisory_lock', 'enrollment_enabled', 'rerun'], true)) {
             [$previewCode, $previewResult] = runner(array_replace($env, ['OPERATION' => 'PREVIEW']));
+            operation('preview_rejection');
             demand($previewCode === 1 && $previewResult['phase'] === CASES[$case]);
+            operation('preservation');
             demand(fullSnapshot($pdo) === $before);
         }
     }
+    operation('baseline_preservation');
     demand($baselineFull === fullSnapshot($baseline));
 }
 
@@ -249,18 +319,23 @@ function main(array $arguments): int
     ob_start();
     $result = ['status' => 'FAIL', 'phase' => 'disposable_runner_assertion'];
     try {
+        operation('container_boundary');
         demand(count($arguments) === 1 && getenv('EV_DISPOSABLE_CONTAINER') === 'true' && getenv('EV_NETWORK_MODE') === 'none');
+        operation('network_boundary');
         demand(PHP_OS_FAMILY === 'Linux' && is_file('/.dockerenv'));
         // Independently inspect namespace routes: loopback only, not a flag alone.
         $routes = file('/proc/net/route', FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
         demand(is_array($routes) && count($routes) === 1);
+        operation('load_runner');
         require_once '/run/ev-source/.github/scripts/email-verification-incremental.php';
+        operation('fixture_credentials');
         $password = trim(fgets(STDIN));
         $key = trim(fgets(STDIN));
         demand((bool) preg_match('/\A[a-f0-9]{64}\z/', $password) && (bool) preg_match('~\Abase64:[A-Za-z0-9+/]{43}=\z~', $key));
         execute($arguments[0], $password, $key);
         $result = ['status' => 'PASS', 'case' => $arguments[0], 'synthetic_only' => true];
-    } catch (Throwable) {
+    } catch (Throwable $error) {
+        $result['diagnostic'] = diagnostic($error);
         // No exception, SQL, credential, user content or raw subprocess output.
     }
     ob_end_clean();

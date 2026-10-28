@@ -2,6 +2,9 @@
 
 import importlib.util
 import json
+import re
+import subprocess
+import sys
 from pathlib import Path
 import tempfile
 import unittest
@@ -146,6 +149,83 @@ class IncrementalCiSafetyTest(unittest.TestCase):
         for key in ('synthetic_only', 'production_access', 'production_approval'):
             with self.subTest(key=key), self.assertRaises(ValueError):
                 ci.validate_evidence(dict(self.report(), **{key: not self.report()[key]}), self.images())
+
+    def diagnostic(self):
+        return dict(operation='preview_result', category='tls', runner_phase='tls_connection', mysql_code=2026)
+
+    def test_first_scenario_failure_diagnostic_reaches_final_report_and_summary(self):
+        with tempfile.TemporaryDirectory() as directory:
+            temp = Path(directory)
+            raw = dict(self.report(), status='FAIL', phase='preview_readonly', checks=[], diagnostic=self.diagnostic())
+            self.write(temp, raw)
+            passed, summary = ci.finalize(temp, dict(self.env(), HARNESS_OUTCOME='failure'))
+            self.assertFalse(passed)
+            final = json.loads(self.read_final(temp))
+            self.assertEqual(final['diagnostic'], self.diagnostic())
+            self.assertEqual(final['phase'], 'preview_readonly')
+            self.assertEqual(final['passed_scenarios'], 0)
+            self.assertIn('`tls_connection`', summary)
+
+    def test_helper_diagnostic_is_captured_before_private_output_is_deleted(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / 'private-result.json'
+            source.write_text(json.dumps(dict(status='FAIL', phase='disposable_runner_assertion', diagnostic=self.diagnostic())))
+            self.assertEqual(ci.capture_diagnostic(source, 'helper_exit', 'helper'), self.diagnostic())
+
+    def test_malformed_private_helper_output_uses_fixed_shell_fallback(self):
+        fallback = dict(operation='container_start', category='docker', runner_phase=None, mysql_code=None)
+        for content in ('synthetic-secret-private-stderr', '{bad json',
+                        json.dumps(dict(status='FAIL', phase='disposable_runner_assertion',
+                                        diagnostic=dict(self.diagnostic(), category='synthetic-secret')))):
+            with self.subTest(content=content[:10]), tempfile.TemporaryDirectory() as directory:
+                source = Path(directory) / 'private-result.json'
+                source.write_text(content)
+                self.assertEqual(ci.capture_diagnostic(source, 'container_start', 'docker'), fallback)
+
+    def test_diagnostic_fields_are_strictly_allowlisted_and_never_make_pass(self):
+        for key, value in (('operation', 'synthetic-secret'), ('category', 'synthetic-secret'),
+                           ('runner_phase', 'synthetic-secret'), ('mysql_code', 99999),
+                           ('mysql_code', '2026'), ('mysql_code', 2026.0), ('private_sql', 'synthetic-secret')):
+            with self.subTest(key=key, value=value), self.assertRaises(ValueError):
+                ci.validate_diagnostic(dict(self.diagnostic(), **{key: value}))
+        with self.assertRaises(ValueError):
+            ci.validate_evidence(dict(self.report(), diagnostic=self.diagnostic()), self.images())
+
+    def test_actual_cleanup_heredoc_keeps_failed_helper_diagnostics(self):
+        root = Path(__file__).resolve().parents[2]
+        shell = (root / '.github/scripts/email-verification-incremental-rehearsal.sh').read_text()
+        bodies = re.findall(r"(?ms)^[ \t]*python3[^\n]*<<'PY'\n(.*?)^PY\s*$", shell)
+        self.assertEqual(len(bodies), 4)
+        for body in bodies:
+            compile(body, '<embedded Python>', 'exec')
+        with tempfile.TemporaryDirectory() as directory:
+            temp = Path(directory)
+            evidence = self.write(temp)
+            helper = temp / 'private-result.json'
+            helper.write_text(json.dumps(dict(status='FAIL', phase='disposable_runner_assertion', diagnostic=self.diagnostic())))
+            result = subprocess.run([sys.executable, '-B', '-c', bodies[0], str(evidence), 'preview_readonly', '1',
+                                     str(helper), 'helper_exit', 'helper'], cwd=root, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 1)
+            self.assertEqual(result.stderr, '')
+            raw = json.loads((evidence / 'report.json').read_text())
+            self.assertEqual(raw['diagnostic'], self.diagnostic())
+            self.assertEqual(raw['checks'], [])
+            passed, _ = ci.finalize(temp, dict(self.env(), HARNESS_OUTCOME='failure'))
+            self.assertFalse(passed)
+            self.assertEqual(json.loads(self.read_final(temp))['diagnostic'], self.diagnostic())
+            # Complete successful evidence must not inherit a stale helper failure.
+            for case in ci.CASES:
+                (evidence / ('case-' + case + '.json')).write_text(json.dumps(
+                    dict(status='PASS', case=case, synthetic_only=True)))
+            result = subprocess.run([sys.executable, '-B', '-c', bodies[0], str(evidence), 'complete', '0',
+                                     str(helper), 'case_evidence', 'helper'], cwd=root, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0)
+            self.assertEqual(result.stderr, '')
+            raw = json.loads((evidence / 'report.json').read_text())
+            self.assertEqual(raw['status'], 'PASS')
+            self.assertNotIn('diagnostic', raw)
+            passed, _ = ci.finalize(temp, self.env())
+            self.assertTrue(passed)
 
 
 if __name__ == '__main__':

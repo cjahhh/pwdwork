@@ -18,6 +18,8 @@ app_name="$run_label-app"
 evidence="$task_temp/$run_label-evidence"
 mkdir "$evidence"
 stage=preparation
+operation=prepare
+failure_category=command
 cleanup() {
   local status="$?" owner resolved
   trap - EXIT
@@ -26,15 +28,20 @@ cleanup() {
     owner="$(docker inspect --format '{{index .Config.Labels "pwdwork.rehearsal"}}' "$container" 2>/dev/null)"
     if [[ "$owner" == "$run_label" ]]; then docker rm --force --volumes "$container" >/dev/null 2>&1; fi
   done
-  python3 - "$evidence" "$stage" "$status" <<'PY'
-import json, pathlib, sys
-directory, stage, code = sys.argv[1:]
+  python3 - "$evidence" "$stage" "$status" "$work/result.json" "$operation" "$failure_category" <<'PY'
+import importlib.util, json, pathlib, sys
+directory, stage, code, helper, operation, category = sys.argv[1:]
 root = pathlib.Path(directory)
 checks = [json.loads(p.read_text()) for p in sorted(root.glob('case-*.json'))]
 passed = code == '0' and stage == 'complete' and len(checks) == 32 and all(c['status'] == 'PASS' for c in checks)
 report = dict(status='PASS' if passed else 'FAIL', phase=stage, checks=checks,
               synthetic_only=True, production_access=False, production_approval=False,
               github_approval_api='mocked offline; live environment not tested')
+if not passed:
+    spec = importlib.util.spec_from_file_location('incremental_ci', '.github/scripts/email-verification-incremental-ci.py')
+    ci = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(ci)
+    report['diagnostic'] = ci.capture_diagnostic(pathlib.Path(helper), operation, category)
 (root/'report.json').write_text(json.dumps(report, indent=2)+'\n')
 print(report['status'] + ': disposable incremental runner; evidence=' + str(root/'report.json'))
 sys.exit(0 if passed else 1)
@@ -62,9 +69,11 @@ chmod -R a+rX "$work/source"
 # Download/build before generating any synthetic credentials. Existing allowlist
 # .dockerignore excludes .env, keys, dumps and credentials from the build context.
 stage=images
+operation=image_pull
 docker pull docker.io/library/mysql:8.4.11 > "$work/pull.log" 2>&1
 mysql_id="$(docker image inspect --format '{{.Id}}' docker.io/library/mysql:8.4.11)"
 mysql_digest="$(docker image inspect --format '{{index .RepoDigests 0}}' docker.io/library/mysql:8.4.11)"
+operation=image_build
 docker build --target vendor --tag "pwdwork-incremental-lab:$run_label" . > "$work/build.log" 2>&1
 app_id="$(docker image inspect --format '{{.Id}}' "pwdwork-incremental-lab:$run_label")"
 python3 - "$evidence/images.json" "$mysql_digest" "$app_id" <<'PY'
@@ -75,6 +84,7 @@ assert re.fullmatch(r'sha256:[a-f0-9]{64}', app)
 pathlib.Path(path).write_text(json.dumps(dict(mysql=mysql, application=app))+'\n')
 PY
 stage=synthetic_credentials_and_tls
+operation=tls_fixture
 openssl rand -hex 32 > "$work/secrets/root-password"
 openssl rand -hex 32 > "$work/secrets/user-password"
 printf 'base64:' > "$work/secrets/app-key"
@@ -104,6 +114,8 @@ chmod 644 "$work/tls/ca.pem" "$work/tls/server.pem" "$work/tls/server-key.pem" "
 printf '127.0.0.1 localhost incremental-rehearsal.aivencloud.com wrong-rehearsal.aivencloud.com\n' > "$work/hosts"
 chmod 644 "$work/hosts"
 stage=isolated_mysql
+operation=mysql_create
+failure_category=docker
 docker create --name "$db_name" --label "pwdwork.rehearsal=$run_label" --network none \
   --mount "type=bind,src=$work/secrets,dst=/run/ev-secrets,readonly" \
   --mount "type=bind,src=$work/tls,dst=/run/lab-tls,readonly" \
@@ -112,6 +124,7 @@ docker create --name "$db_name" --label "pwdwork.rehearsal=$run_label" --network
   --env MYSQL_PASSWORD_FILE=/run/ev-secrets/user-password "$mysql_id" \
   --ssl-ca=/run/lab-tls/ca.pem --ssl-cert=/run/lab-tls/server.pem --ssl-key=/run/lab-tls/server-key.pem \
   --event-scheduler=OFF > "$work/create.log" 2>&1
+operation=mysql_start
 docker start "$db_name" > "$work/start.log" 2>&1
 # Docker canonicalizes container:<name> to container:<full-ID> during creation.
 # Use the immutable ID for both the requested namespace and its inspection.
@@ -126,6 +139,8 @@ sql() {
     --default-character-set=utf8mb4 --init-command="SET SESSION time_zone='+00:00'" --batch --skip-column-names "$@"
 }
 ready=false
+operation=mysql_ready
+failure_category=mysql_command
 for attempt in $(seq 1 60); do
   if docker exec "$db_name" mysql --defaults-extra-file=/run/ev-secrets/user-client.cnf \
     --database=pwdwork_ev_rehearsal --execute='SELECT 1' >/dev/null 2>&1; then ready=true; break; fi
@@ -136,6 +151,10 @@ test "$(printf 'SELECT VERSION();\n' | sql)" = 8.4.11
 printf "GRANT SELECT ON performance_schema.metadata_locks TO 'pwdwork_rehearsal'@'%%';\n" | sql > "$work/grants.log" 2>&1
 app() {
   local entry="$1"; shift
+  # Remove only the previous private helper result, so diagnostics cannot be stale.
+  rm -f -- "$work/result.json"
+  operation=container_create
+  failure_category=docker
   docker create --interactive --name "$app_name" --label "pwdwork.rehearsal=$run_label" \
     --user 0:0 --read-only --tmpfs /tmp:rw,nosuid,nodev,size=128m \
     --cap-drop ALL --security-opt no-new-privileges --network "container:$db_id" \
@@ -148,13 +167,18 @@ app() {
     --mount "type=bind,src=$ca_file,dst=/run/aiven-ca.pem,readonly" \
     --mount "type=bind,src=$work/dump.sha256,dst=/run/ev-tools/dump.sha256,readonly" \
     "${extra_mount[@]}" --entrypoint php "$app_id" "$entry" "$@" > "$work/app-create.log" 2>&1
+  operation=container_network
   test "$(docker inspect --format '{{.HostConfig.NetworkMode}}' "$app_name")" = "container:$db_id"
   local result=0
+  operation=container_start
   cat "$work/secrets/user-password" "$work/secrets/app-key" |
     docker start --attach --interactive "$app_name" > "$work/result.json" 2> "$work/app-error.log" || result="$?"
   local code
+  operation=container_exit
   code="$(docker inspect --format '{{.State.ExitCode}}' "$app_name")"
   docker rm "$app_name" >/dev/null
+  operation=helper_exit
+  failure_category=helper
   test "$result" = 0 && test "$code" = 0
 }
 source_dir="$work/source"
@@ -165,6 +189,8 @@ chmod 644 "$work/dump.sha256"
 stage=existing_baseline_and_fixture
 app /run/ev-tools/helper.php init pwdwork_ev_rehearsal
 stage=synthetic_backup
+operation=synthetic_backup
+failure_category=mysql_command
 docker exec "$db_name" mysqldump --defaults-extra-file=/run/ev-secrets/root-client.cnf \
   --single-transaction --quick --set-gtid-purged=OFF --no-tablespaces --hex-blob \
   --routines --events --triggers pwdwork_ev_rehearsal > "$work/before.sql" 2> "$work/dump-error.log"
@@ -183,7 +209,10 @@ cases=(preview_readonly apply_success preview_unapproved apply_unapproved wrong_
   preview_missing preview_hash preview_expired preview_wrong_sha preview_wrong_schema schema_drift advisory_lock enrollment_enabled rerun)
 for scenario in "${cases[@]}"; do
   stage="$scenario"
+  operation=database_reset
+  failure_category=mysql_command
   printf "DROP DATABASE IF EXISTS pwdwork_prod; CREATE DATABASE pwdwork_prod CHARACTER SET utf8mb4; GRANT ALL ON pwdwork_prod.* TO 'pwdwork_rehearsal'@'%%';\n" | sql > "$work/reset.log" 2>&1
+  operation=database_restore
   sql pwdwork_prod < "$work/before.sql" > "$work/restore.log" 2>&1
   source_dir="$work/source"; ca_file="$work/tls/ca.pem"; extra_mount=()
   if [[ "$scenario" == changed_migration || "$scenario" == extra_migration ]]; then
@@ -204,6 +233,8 @@ for scenario in "${cases[@]}"; do
   fi
   if [[ "$scenario" == wrong_ca ]]; then ca_file="$work/wrong-ca.pem"; fi
   app /run/ev-tools/incremental-test.php "$scenario"
+  operation=case_evidence
+  failure_category=helper
   python3 - "$work/result.json" "$evidence/case-$scenario.json" "$scenario" <<'PY'
 import json, pathlib, sys
 result = json.loads(pathlib.Path(sys.argv[1]).read_text())

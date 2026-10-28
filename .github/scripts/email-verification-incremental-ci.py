@@ -25,6 +25,24 @@ PHASES = set(CASES) | {
     'existing_baseline_and_fixture', 'synthetic_backup', 'complete',
 }
 OUTCOMES = ('AUTHORIZATION_OUTCOME', 'OFFLINE_OUTCOME', 'SYNTAX_OUTCOME', 'HARNESS_OUTCOME')
+OPERATIONS = {
+    'unknown', 'prepare', 'image_pull', 'image_build', 'tls_fixture', 'mysql_create', 'mysql_start',
+    'mysql_ready', 'database_reset', 'database_restore', 'synthetic_backup', 'case_evidence',
+    'container_create', 'container_network', 'container_start', 'container_exit', 'helper_exit',
+    'container_boundary', 'network_boundary', 'load_runner', 'fixture_credentials',
+    'connect_target', 'connect_baseline', 'baseline_snapshot', 'restore_compare', 'baseline_state',
+    'original_snapshot', 'server_identity', 'evidence_fixture', 'prepare_scenario', 'before_snapshot',
+    'runner_start', 'runner_output', 'runner_receipt', 'preview_result', 'apply_result',
+    'postflight_state', 'preservation', 'repeat_result', 'expected_rejection', 'preview_rejection',
+    'baseline_preservation',
+}
+CATEGORIES = {'mysql_permissions', 'mysql_schema', 'mysql_lock', 'mysql_connectivity', 'tls',
+              'database', 'invalid_json', 'validation', 'php_runtime', 'unexpected',
+              'runner_protocol', 'docker', 'mysql_command', 'command', 'helper'}
+RUNNER_PHASES = {'authorization', 'reviewed_source', 'backup_proof', 'tls_connection', 'schema_history',
+                 'original_snapshot', 'laravel_runtime', 'compiled_ddl', 'preview_evidence',
+                 'final_preflight', 'single_migration', 'postflight'}
+MYSQL_CODES = {1044, 1045, 1049, 1054, 1060, 1142, 1146, 1205, 2002, 2003, 2006, 2013, 2026}
 
 
 def demand(condition):
@@ -62,10 +80,36 @@ def load_json(path):
     return json.loads(path.read_text(encoding='utf-8'), object_pairs_hook=unique)
 
 
+def validate_diagnostic(value):
+    demand(isinstance(value, dict) and set(value) == {'operation', 'category', 'runner_phase', 'mysql_code'})
+    demand(value['operation'] in OPERATIONS and value['category'] in CATEGORIES)
+    demand(value['runner_phase'] is None or value['runner_phase'] in RUNNER_PHASES)
+    demand(value['mysql_code'] is None or (type(value['mysql_code']) is int and value['mysql_code'] in MYSQL_CODES))
+    return dict(value)
+
+
+def capture_diagnostic(path, operation, category):
+    """Read only fixed-vocabulary helper diagnostics; never emit raw output."""
+    fallback = dict(operation=operation if operation in OPERATIONS else 'unknown',
+                    category=category if category in CATEGORIES else 'unexpected',
+                    runner_phase=None, mysql_code=None)
+    try:
+        helper = load_json(path)
+        demand(set(helper) == {'status', 'phase', 'diagnostic'})
+        demand(helper['status'] == 'FAIL' and helper['phase'] == 'disposable_runner_assertion')
+        return validate_diagnostic(helper['diagnostic'])
+    except Exception:
+        return fallback
+
+
 def validate_evidence(raw, images):
     demand(isinstance(raw, dict) and isinstance(images, dict))
-    demand(set(raw) == {'status', 'phase', 'checks', 'synthetic_only', 'production_access',
-                        'production_approval', 'github_approval_api'})
+    expected = {'status', 'phase', 'checks', 'synthetic_only', 'production_access',
+                'production_approval', 'github_approval_api'}
+    demand(set(raw) in (expected, expected | {'diagnostic'}))
+    if 'diagnostic' in raw:
+        demand(raw['status'] == 'FAIL')
+        validate_diagnostic(raw['diagnostic'])
     demand(raw['status'] in ('PASS', 'FAIL') and raw['phase'] in PHASES)
     demand(raw['synthetic_only'] is True and raw['production_access'] is False
            and raw['production_approval'] is False and raw['github_approval_api'] == APPROVAL_NOTE)
@@ -87,7 +131,7 @@ def validate_evidence(raw, images):
 
 def finalize(temp, env):
     """Never copy raw input to artifacts or diagnostics, including on parse errors."""
-    checks, images, phase = {}, {}, 'ci_evidence'
+    checks, images, phase, diagnostic = {}, {}, 'ci_evidence', None
     outcomes = {key.removesuffix('_OUTCOME').lower(): env.get(key) == 'success' for key in OUTCOMES}
     passed = False
     try:
@@ -98,10 +142,11 @@ def finalize(temp, env):
         identities = load_json(directory / 'images.json') if (directory / 'images.json').exists() else {}
         checks = validate_evidence(raw, identities)
         images, phase = identities, raw['phase']
+        diagnostic = validate_diagnostic(raw['diagnostic']) if 'diagnostic' in raw else None
         passed = raw['status'] == 'PASS' and all(outcomes.values())
     except Exception:
         # No unvalidated stage, image, exception, path or user-supplied data is emitted.
-        checks, images, phase = {}, {}, 'ci_evidence'
+        checks, images, phase, diagnostic = {}, {}, 'ci_evidence', None
     sha = env.get('GITHUB_SHA', '')
     run_id = env.get('GITHUB_RUN_ID', '')
     identity_valid = bool(re.fullmatch(r'[a-f0-9]{40}', sha) and re.fullmatch(r'[1-9][0-9]*', run_id))
@@ -113,6 +158,8 @@ def finalize(temp, env):
                   passed_scenarios=len(checks), workflow_checks=outcomes,
                   checks=checks, images=images, synthetic_only=True, production_access=False,
                   production_approval=False, github_approval_api=APPROVAL_NOTE)
+    if diagnostic is not None:
+        report['diagnostic'] = diagnostic
     destination = temp / 'pwdwork-incremental-ci-evidence'
     demand(not destination.is_symlink())
     destination.mkdir(exist_ok=True)
@@ -125,6 +172,9 @@ def finalize(temp, env):
              'Synthetic MySQL 8.4.11 only. No production access or rollout approval.',
              'GitHub approval API is mocked offline; live approval enforcement remains unverified.', '',
              '| Scenario | Result |', '| --- | --- |']
+    if diagnostic is not None:
+        lines[8:8] = [f'Diagnostic: operation `{diagnostic["operation"]}`; category `{diagnostic["category"]}`; '
+                      f'runner phase `{diagnostic["runner_phase"]}`; native code `{diagnostic["mysql_code"]}`.', '']
     lines += [f'| {case} | {checks.get(case, "FAIL" if case == phase else "NOT RUN")} |' for case in CASES]
     summary = '\n'.join(lines) + '\n'
     (destination / 'summary.md').write_text(summary, encoding='utf-8')
