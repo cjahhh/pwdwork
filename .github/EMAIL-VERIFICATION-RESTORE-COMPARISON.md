@@ -1,9 +1,9 @@
 # Disposable restore comparison investigation
 
 Reviewed **29 October 2026**, with local HEAD matching the reported commit
-`6f97579079218fb937174ba93191ad35ccfe221b`. The owner reports run `40727509754`
-failed `preview_readonly`, operation `restore_compare`, category `validation`,
-runner phase/native code null, with **0/32** scenarios passed. This report is
+`00d95593c7efbde65c4e93b4c85b4de60c88df61`. The owner reports run `40730422871`
+failed operation `restore_compare`, table `accommodation_request_events`, with
+**0/32** scenarios passed. This report is
 based on that supplied diagnostic and the matching local code, not an independently
 retrieved private Actions artifact. No production connection was made.
 
@@ -25,30 +25,50 @@ The current call chain is:
    `schemaComponents()` reads classify the raw definition mismatch.
 
 The confirmed failure is unequal SHA256 fingerprints of the **raw**
-`SHOW CREATE TABLE` text. Both row counts are zero and row fingerprints match.
-Table inventory, snapshot structure, columns/defaults, indexes, foreign keys,
-table options and Information Schema AUTO_INCREMENT match. The raw hashed-line
-multiset does not match. Missing primary keys and native connection/query errors
-are not the reported failure.
+`SHOW CREATE TABLE` text. The latest evidence confirms equal Information Schema
+column definitions/defaults and equal primary keys, indexes, foreign keys and
+table options, but unequal parsed column tokens. `definition_parse` is true;
+`definition_columns`, `definition_tokens` and `definition_clause_set` are false.
+The preceding run additionally reported zero rows on each side with equal data
+fingerprints; that does not identify the latest differing column.
 
 The incremental runner has **not started** at this point. Its authorization,
 certificate verification, migration and postflight are not the origin of this
 specific reported assertion. Both controller PDO connections and the baseline
 snapshot completed; this does not prove the runner's later TLS connection.
 
-**The exact differing SQL fragment remains unconfirmed.** Matching selected
-metadata is insufficient to prove equivalent full definitions: CHECK expressions,
-comments and other clauses/options are also represented by SHOW CREATE. No raw
-DDL is available in the supplied sanitized evidence, and Docker is unavailable
-locally. The private run artifact was not independently retrieved.
+**The exact differing column and SQL fragment remain unconfirmed.** No raw DDL
+or per-column evidence is available locally; Docker and the GitHub CLI are not
+available, and no private Actions artifact was independently retrieved. The new
+outcomes rule out whitespace-only differences outside protected tokens and a
+pure declaration reorder. They supersede the previous foreign-key-order candidate.
 
-A concrete diagnostic blind spot is reproduced offline: swapping the final two
-foreign-key declarations moves the trailing separator comma. All supplied
-comparison outcomes can remain exactly as reported, including
-`definition_line_set: false`. Consequently that result does **not** rule out
-declaration-order differences. This reproduction establishes a possibility, not
-the runtime root cause. The affected migration declares two foreign keys through
-Laravel schema operations; no generated-declaration order is assumed stable.
+The parser groups declarations starting with a backtick as columns and keeps
+them in order. It preserves quoted strings/identifiers and comments, and splits
+only at top-level commas. Identical raw text cannot produce different parsed
+results here. More decisively, **the parser cannot cause the restore rejection**:
+`fullSnapshot()` hashes raw SHOW CREATE output without calling it. Successful
+parsing alone does not establish that column classification matches metadata;
+the new diagnostic checks all parsed names and their order against Information
+Schema on each side.
+
+## Concrete representation candidate from existing evidence
+
+[MySQL bug #110825](https://bugs.mysql.com/bug.php?id=110825), verified for MySQL
+8.0.32, documents SHOW CREATE instability when recreating a table from its own
+output: a character column initially displays COLLATE alone, and after recreation
+also displays an explicit CHARACTER SET clause. Effective charset, collation and
+the remaining column definition stay the same. This is a primary-source example,
+not confirmation of behavior on this specific MySQL 8.4.11 run.
+
+The local Laravel MySQL grammar supplies the table charset/collation; the reviewed
+workflow migration does not set per-column charset/collation. Its first character
+column is `actor_role` (ordinal 4). That is a concrete candidate **if** the reported
+MySQL behavior is the cause, not an identified runtime mismatch. The offline
+regression reproduces the latest reported pattern with that synthetic declaration:
+equal metadata/defaults, unequal column/token/clause-set comparisons and successful
+parsing. It still rejects the restore. Comments, explicit defaults, quoting and
+attributes remain possible alternatives until per-column evidence is obtained.
 
 ## Backup and equality review
 
@@ -97,6 +117,32 @@ The raw definition fingerprint and all acceptance checks remain unchanged. A
 parser failure reports `definition_parse: false`, retains available metadata
 comparisons, and leaves the original failure intact.
 
+The existing Actions workflow now obtains a focused `comparison.column` object
+through its existing helper/cleanup/validator path; no workflow, network, dump or
+restore change is needed. It reports only the first differing ordinal, names from
+the 14-column `accommodation_request_events` allowlist (other names become null),
+fixed token classes and fixed boolean checks. There are no SQL tokens/values,
+charset names, defaults, comments, expression text, hashes or exception messages
+in that object.
+
+The checks establish parser-to-metadata alignment on both sides, column order,
+per-column ordinal/type/default/nullability/extra/charset/collation/generated
+expression equality, and whether the difference is solely an explicit
+metadata-matching CHARACTER SET clause. The hint removes at most one such
+top-level clause for private comparison; quoted literals, comments, generated
+expressions, nonmatching charsets and duplicate clauses are retained. A separate
+`all_columns_charset_spelling` outcome prevents a first-column hint from hiding
+later real changes. Freshness checks compare reread DDL hashes with the original
+fullSnapshot hashes, so drift during diagnostics is visible.
+
+These are **diagnostic comparisons only**. If a subsequent isolated run confirms
+both freshness checks, parser alignment, equal metadata, and
+`all_columns_charset_spelling: true`, a possible correction is canonicalizing only
+those metadata-matching explicit charset clauses while continuing to compare all
+remaining tokens and all records. No acceptance canonicalization is implemented
+while the actual differing declaration is unknown. The metadata query does not
+include COLUMN_COMMENT/SRS_ID; these are not discarded from the raw DDL guard.
+
 The original `definition` and `records` fingerprints and strict acceptance
 criteria remain intact. Supplementary metadata is read **only after a DDL
 mismatch**, solely to classify it. A failure of those extra diagnostic reads
@@ -131,8 +177,8 @@ MySQL documents default NO ACTION omission in SHOW CREATE and explicit RESTRICT
 display. This is background for the scoped hint, **not evidence** that this run
 lost an action: [MySQL foreign-key actions](https://dev.mysql.com/doc/refman/8.4/en/create-table-foreign-keys.html).
 
-Only fixed category names, reviewed table names, boolean outcomes and safe row
-counts are published. No raw DDL, defaults, index/constraint names, schema names,
+Only fixed category/token-class names, reviewed table/column names, the column
+ordinal, boolean outcomes and safe row counts are published. No raw DDL, defaults, index/constraint names, schema names,
 fingerprints, passwords, personal data, dumps, bindings, exception messages or
 credentials are emitted. The Python validator checks the exact nested shape and
 allowlists before propagating it through the existing cleanup/report/summary
@@ -141,23 +187,29 @@ pipeline. A comparison cannot accompany PASS evidence.
 ## Changes and validation
 
 - `.github/scripts/email-verification-incremental-rehearsal.php`: comparison
-  token/declaration diagnostics, retaining the strict guard.
+  first-column diagnostics with metadata alignment and scoped charset hints,
+  retaining the strict guard and original fullSnapshot capture.
 - `.github/scripts/email-verification-incremental-ci.py`: nested comparison
-  allowlists for the new boolean categories; existing rendering/redaction unchanged.
+  allowlists, strict first-column object validation and sanitized summary rendering.
 - `backend/tests/Unit/EmailVerificationRestoreComparisonTest.php`: mocked-PDO
   regressions for identical restore, schema/default/index/FK/options/counter
   differences, row and ledger changes, table/order differences, missing primary
   keys, redaction and diagnostic-read failures. Additional regressions reproduce
   final-clause comma movement and distinguish whitespace/order equivalence from
   meaningful changes. Even diagnostic-equivalent raw differences still fail.
-  No MySQL connection is opened.
+  New regressions cover the public MySQL example, first-column reporting, actual
+  type/default/nullability/charset/collation/attribute/generated-expression changes,
+  comments, unknown names, parser misalignment, protected tokens and later-column
+  changes. No MySQL connection is opened.
 - `.github/tests/test_email_verification_incremental_ci.py`: safe nested-schema
   validation and actual cleanup-heredoc-to-artifact propagation regressions,
   including new categories and zero-row failures. Equivalence hints cannot
-  promote failed evidence to PASS.
+  promote failed evidence to PASS. New first-column evidence traverses the actual
+  cleanup heredoc and summary path; raw SQL, unknown names, nonboolean flags and
+  malformed objects are rejected and redacted.
 - This investigation record.
 
-Local results: **181 PHP tests / 599 assertions**, **38 Python tests**, PHP syntax
+Local results: **197 PHP tests / 772 assertions**, **41 Python tests**, PHP syntax
 and Pint, Bash syntax, compilation of all four incremental-rehearsal Python
 heredocs (ten across the three email-verification Bash scripts), actionlint and
 whitespace checks passed. ShellCheck is unavailable. Docker is still unavailable
@@ -173,14 +225,15 @@ The existing deliberately invalid `enrollment_enabled` scenario still tests
 rejection before activation or database access. No deployed environment or
 production configuration was accessed to verify its runtime state.
 
-Another separately authorized isolated diagnostic run is justified to classify
-the differing SQL representation. If `definition_tokens` is true, only whitespace
-outside protected tokens differs. If it is false but `definition_clause_set` and
-all ordered/category comparisons are true, only declaration placement differs.
-Otherwise the false component category identifies where exact tokens differ;
-the FK-action and DDL-counter hints narrow those particular cases. No DDL text
-or values should be published. Do not claim the restore problem is fixed or
-change acceptance until evidence establishes a concrete, harmless difference.
+Another separately authorized isolated diagnostic run is justified because the
+existing evidence cannot identify the first column or confirm the candidate.
+Expected focused evidence for the candidate is `before_name/after_name: actor_role`,
+ordinal 4, token classes `collation` / `character_set`, both metadata alignment and
+freshness checks true, and both charset-spelling hints true. These are expectations
+for the offline example, not claims about the private run. Any false alignment,
+freshness or all-column hint requires further investigation; no raw SQL or values
+should be published. Do not claim the restore problem is fixed or change
+acceptance until evidence establishes a concrete, harmless difference.
 Use a new reviewed opt-in commit through the existing runbook, not an old-commit
 rerun. No commit, push, merge, deployment, production access or credential change
 was performed here. Production migration and activation remain unapproved.

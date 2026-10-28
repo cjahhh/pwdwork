@@ -70,7 +70,7 @@ class EmailVerificationRestoreComparisonTest extends TestCase
         $pdo->method('query')->willReturnCallback(function ($sql) use ($fixture) {
             $this->assertStringStartsWith('SHOW CREATE TABLE ', $sql);
             $statement = $this->getMockBuilder(PDOStatement::class)->disableOriginalConstructor()->onlyMethods(['fetch'])->getMock();
-            $statement->method('fetch')->willReturn(['users', $fixture['ddl']]);
+            $statement->method('fetch')->willReturn([$fixture['tables'][0]['TABLE_NAME'], $fixture['ddl']]);
 
             return $statement;
         });
@@ -326,6 +326,169 @@ SQL;
             $this->assertTrue($error->comparison['checks']['column_definitions']);
             $this->assertTrue($error->comparison['checks']['foreign_keys']);
             $this->assertStringNotContainsString('synthetic-private', json_encode($error->comparison));
+        }
+    }
+
+    private function columnFixture(string $roleSql = 'varchar(20) COLLATE utf8mb4_unicode_ci NOT NULL'): array
+    {
+        $fixture = $this->fixture();
+        $fixture['tables'][0]['TABLE_NAME'] = 'accommodation_request_events';
+        $fixture['columns'] = [];
+        foreach (['id', 'accommodation_request_id', 'actor_id', 'actor_role'] as $i => $name) {
+            $fixture['columns'][] = ['COLUMN_NAME' => $name, 'ORDINAL_POSITION' => (string) ($i + 1),
+                'COLUMN_TYPE' => $i === 3 ? 'varchar(20)' : 'bigint unsigned', 'IS_NULLABLE' => 'NO',
+                'COLUMN_DEFAULT' => null, 'EXTRA' => $i === 0 ? 'auto_increment' : '',
+                'CHARACTER_SET_NAME' => $i === 3 ? 'utf8mb4' : null,
+                'COLLATION_NAME' => $i === 3 ? 'utf8mb4_unicode_ci' : null, 'GENERATION_EXPRESSION' => ''];
+        }
+        $fixture['ddl'] = "CREATE TABLE `accommodation_request_events` (\n  `id` bigint unsigned NOT NULL AUTO_INCREMENT,\n  `accommodation_request_id` bigint unsigned NOT NULL,\n  `actor_id` bigint unsigned NOT NULL,\n  `actor_role` ".$roleSql.",\n  PRIMARY KEY (`id`)\n) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci";
+
+        return $fixture;
+    }
+
+    private function columnReport(array $before, array $after): array
+    {
+        $table = 'accommodation_request_events';
+        try {
+            requireRestored([$table => $this->snapshot($before['ddl'])['users']],
+                [$table => $this->snapshot($after['ddl'])['users']], $this->pdo($before), $this->pdo($after));
+            $this->fail('Column diagnostics must never relax raw DDL equality');
+        } catch (RestoreComparisonFailure $error) {
+            $this->assertFalse($error->comparison['checks']['definition']);
+            $this->assertFalse($error->comparison['checks']['definition_columns']);
+            $this->assertTrue($error->comparison['checks']['definition_snapshot_before']);
+            $this->assertTrue($error->comparison['checks']['definition_snapshot_after']);
+
+            return $error->comparison;
+        }
+    }
+
+    public function test_mysql_explicit_charset_example_identifies_first_column_without_accepting_restore(): void
+    {
+        $before = $this->columnFixture();
+        $after = $this->columnFixture('varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL');
+        $report = $this->columnReport($before, $after);
+        $this->assertTrue($report['checks']['column_definitions']);
+        $this->assertTrue($report['checks']['column_defaults']);
+        $column = $report['column'];
+        $this->assertSame(4, $column['ordinal']);
+        $this->assertSame('actor_role', $column['before_name']);
+        $this->assertSame('actor_role', $column['after_name']);
+        $this->assertSame('collation', $column['before_token_kind']);
+        $this->assertSame('character_set', $column['after_token_kind']);
+        foreach ($column['checks'] as $name => $outcome) {
+            $this->assertSame($name !== 'tokens_equal', $outcome, $name);
+        }
+        $json = json_encode($report);
+        foreach (['CREATE TABLE', 'utf8mb4', 'varchar', 'synthetic-private', hash('sha256', $before['ddl'])] as $private) {
+            $this->assertStringNotContainsString($private, $json);
+        }
+    }
+
+    public static function realColumnChanges(): array
+    {
+        return [
+            ['varchar(21) COLLATE utf8mb4_unicode_ci NOT NULL', ['COLUMN_TYPE' => 'varchar(21)'], 'data_type'],
+            ['varchar(20) COLLATE utf8mb4_unicode_ci NULL', ['IS_NULLABLE' => 'YES'], 'nullability'],
+            ["varchar(20) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'synthetic-private-value'", ['COLUMN_DEFAULT' => 'synthetic-private-value'], 'default'],
+            ['varchar(20) CHARACTER SET latin1 COLLATE latin1_bin NOT NULL', ['CHARACTER_SET_NAME' => 'latin1', 'COLLATION_NAME' => 'latin1_bin'], 'character_set'],
+            ['varchar(20) COLLATE utf8mb4_bin NOT NULL', ['COLLATION_NAME' => 'utf8mb4_bin'], 'collation'],
+            ['varchar(20) COLLATE utf8mb4_unicode_ci NOT NULL INVISIBLE', ['EXTRA' => 'INVISIBLE'], 'extra'],
+            ["varchar(20) GENERATED ALWAYS AS (concat('synthetic-private', `id`)) VIRTUAL", ['GENERATION_EXPRESSION' => "concat('synthetic-private', `id`)", 'EXTRA' => 'VIRTUAL GENERATED'], 'generation'],
+            ["varchar(20) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'synthetic-private-comment'", [], null],
+            ['varchar(20) CHARACTER SET latin1 COLLATE utf8mb4_unicode_ci NOT NULL', [], null],
+            ['VARCHAR(20) COLLATE utf8mb4_unicode_ci NOT NULL', [], null],
+        ];
+    }
+
+    #[DataProvider('realColumnChanges')]
+    public function test_real_column_changes_remain_rejected_and_cannot_match_the_charset_hint(string $sql, array $metadata, ?string $category): void
+    {
+        $before = $this->columnFixture();
+        $after = $this->columnFixture($sql);
+        $after['columns'][3] = array_replace($after['columns'][3], $metadata);
+        $report = $this->columnReport($before, $after);
+        $this->assertFalse($report['column']['checks']['charset_spelling_only']);
+        $this->assertFalse($report['column']['checks']['all_columns_charset_spelling']);
+        if ($category !== null) {
+            $this->assertFalse($report['column']['checks'][$category]);
+        }
+        $this->assertStringNotContainsString('synthetic-private', json_encode($report));
+    }
+
+    public function test_first_charset_hint_does_not_hide_a_later_real_column_change(): void
+    {
+        $before = $this->columnFixture();
+        $after = $this->columnFixture('varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL');
+        foreach (['before' => &$before, 'after' => &$after] as $which => &$fixture) {
+            $fixture['ddl'] = str_replace('  PRIMARY KEY', '  `version` int unsigned NOT NULL DEFAULT '.($which === 'before' ? '1' : '2').",\n  PRIMARY KEY", $fixture['ddl']);
+            $fixture['columns'][] = ['COLUMN_NAME' => 'version', 'ORDINAL_POSITION' => '5', 'COLUMN_TYPE' => 'int unsigned',
+                'IS_NULLABLE' => 'NO', 'COLUMN_DEFAULT' => $which === 'before' ? '1' : '2', 'EXTRA' => '',
+                'CHARACTER_SET_NAME' => null, 'COLLATION_NAME' => null, 'GENERATION_EXPRESSION' => ''];
+        }
+        unset($fixture);
+        $report = $this->columnReport($before, $after);
+        $this->assertTrue($report['column']['checks']['charset_spelling_only']);
+        $this->assertFalse($report['column']['checks']['all_columns_charset_spelling']);
+    }
+
+    public function test_parser_metadata_misalignment_and_unknown_names_are_safely_reported(): void
+    {
+        $before = $this->columnFixture();
+        $after = $this->columnFixture('varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL');
+        $after['ddl'] = str_replace('`actor_role`', '`synthetic-private-name`', $after['ddl']);
+        $report = $this->columnReport($before, $after);
+        $this->assertNull($report['column']['after_name']);
+        $this->assertTrue($report['column']['checks']['parser_metadata_before']);
+        $this->assertFalse($report['column']['checks']['parser_metadata_after']);
+        $this->assertFalse($report['column']['checks']['column_order']);
+        $this->assertFalse($report['column']['checks']['charset_spelling_only']);
+        $this->assertStringNotContainsString('synthetic-private', json_encode($report));
+    }
+
+    public function test_real_column_reordering_matches_its_metadata_but_remains_a_failure(): void
+    {
+        $before = $this->columnFixture();
+        $after = $before;
+        $lines = explode("\n", $after['ddl']);
+        [$lines[3], $lines[4]] = [$lines[4], $lines[3]];
+        $after['ddl'] = implode("\n", $lines);
+        [$after['columns'][2], $after['columns'][3]] = [$after['columns'][3], $after['columns'][2]];
+        $after['columns'][2]['ORDINAL_POSITION'] = '3';
+        $after['columns'][3]['ORDINAL_POSITION'] = '4';
+        $report = $this->columnReport($before, $after);
+        $this->assertSame('actor_id', $report['column']['before_name']);
+        $this->assertSame('actor_role', $report['column']['after_name']);
+        $this->assertTrue($report['column']['checks']['parser_metadata_before']);
+        $this->assertTrue($report['column']['checks']['parser_metadata_after']);
+        $this->assertFalse($report['column']['checks']['column_order']);
+        $this->assertFalse($report['column']['checks']['all_columns_charset_spelling']);
+    }
+
+    public function test_diagnostic_reread_drift_is_identified_without_replacing_the_original_snapshot(): void
+    {
+        $before = $this->columnFixture();
+        $after = $this->columnFixture('varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL');
+        $table = 'accommodation_request_events';
+        try {
+            requireRestored([$table => $this->snapshot('synthetic-private-earlier-ddl')['users']],
+                [$table => $this->snapshot($after['ddl'])['users']], $this->pdo($before), $this->pdo($after));
+            $this->fail('A diagnostic reread must never replace a mismatched historical fingerprint');
+        } catch (RestoreComparisonFailure $error) {
+            $this->assertFalse($error->comparison['checks']['definition_snapshot_before']);
+            $this->assertTrue($error->comparison['checks']['definition_snapshot_after']);
+            $this->assertTrue($error->comparison['column']['checks']['charset_spelling_only']);
+            $this->assertStringNotContainsString('synthetic-private', json_encode($error->comparison));
+        }
+    }
+
+    public function test_quoted_charset_keywords_comments_and_generated_expressions_are_not_removed(): void
+    {
+        foreach (["varchar(20) DEFAULT 'CHARACTER SET utf8mb4'", 'varchar(20) /* CHARACTER SET utf8mb4 */',
+            'varchar(20) GENERATED ALWAYS AS (CHARACTER SET utf8mb4) VIRTUAL',
+            'varchar(20) CHARACTER SET latin1', 'varchar(20) CHARACTER SET utf8mb4 CHARACTER SET utf8mb4'] as $sql) {
+            $tokens = definitionParts('CREATE TABLE `users` (`id` '.$sql.') ENGINE=InnoDB')['definition_columns'][0];
+            $this->assertSame($tokens, \Pwdwork\EmailIncrementalLab\columnCharsetSpelling($tokens, ['CHARACTER_SET_NAME' => 'utf8mb4']));
         }
     }
 

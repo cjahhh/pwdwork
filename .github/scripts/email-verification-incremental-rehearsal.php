@@ -57,6 +57,11 @@ const TABLE_NAMES = ['users', 'password_reset_tokens', 'sessions', 'cache', 'cac
     'user_reports', 'admin_audit_logs', 'accommodation_requests', 'accommodation_request_messages',
     'accommodation_request_events', 'resumes', 'resume_application_shares', 'migrations'];
 
+// Focused display allowlist from the reviewed synthetic workflow migration.
+const COLUMN_NAMES = ['accommodation_request_events' => ['id', 'accommodation_request_id', 'actor_id', 'actor_role',
+    'action_key', 'action_hash', 'action', 'before_status', 'after_status', 'explanation', 'snapshot', 'version',
+    'created_at', 'updated_at']];
+
 class RestoreComparisonFailure extends RuntimeException
 {
     public function __construct(public readonly array $comparison)
@@ -192,7 +197,7 @@ REGEX;
 }
 
 /** Private diagnostic hashes only; never change the raw DDL or acceptance rule. */
-function schemaComponents(PDO $pdo, string $table): array
+function schemaComponents(PDO $pdo, string $table, ?array &$source = null): array
 {
     demand(in_array($table, TABLE_NAMES, true));
     $fields = columns($pdo, $table);
@@ -219,13 +224,119 @@ function schemaComponents(PDO $pdo, string $table): array
         'definition_line_set' => $lines,
     ];
     $parsed = true;
+    $parts = null;
     try {
-        $components += definitionParts($ddl);
+        $parts = definitionParts($ddl);
+        $components += $parts;
     } catch (Throwable) {
         $parsed = false;
     }
+    // Private inputs for the focused comparison; never included in a receipt.
+    $source = ['fields' => $fields, 'ddl' => $ddl, 'parts' => $parts];
 
     return ['definition_parse' => $parsed, ...array_map(fn ($value) => hash('sha256', encode($value)), $components)];
+}
+
+function parsedColumnNames(array $source): array
+{
+    return array_map(fn ($clause) => str_replace('``', '`', substr($clause[0], 1, -1)), $source['parts']['definition_columns']);
+}
+
+/** Diagnostic only: remove at most one metadata-matching, top-level charset clause. */
+function columnCharsetSpelling(array $clause, array $field): array
+{
+    $charset = $field['CHARACTER_SET_NAME'] ?? null;
+    if (! is_string($charset) || $charset === '') {
+        return $clause;
+    }
+    $positions = [];
+    $depth = 0;
+    foreach ($clause as $i => $token) {
+        $depth += $token === '(' ? 1 : ($token === ')' ? -1 : 0);
+        if ($depth === 0 && array_slice($clause, $i, 3) === ['CHARACTER', 'SET', $charset]) {
+            $positions[] = $i;
+        }
+    }
+    if (count($positions) === 1) {
+        array_splice($clause, $positions[0], 3);
+    }
+
+    return $clause;
+}
+
+function columnsMatchMetadata(array $source): bool
+{
+    return parsedColumnNames($source) === array_column($source['fields'], 'COLUMN_NAME');
+}
+
+/** Fixed token classes, never a SQL token or value supplied by the database. */
+function columnTokenKind(?string $token): string
+{
+    return match (true) {
+        $token === null => 'end',
+        str_starts_with($token, '`') => 'identifier',
+        str_starts_with($token, "'") || str_starts_with($token, '"') => 'literal',
+        str_starts_with($token, '/*') || str_starts_with($token, '--') || str_starts_with($token, '#') => 'comment',
+        ctype_digit($token) => 'number',
+        in_array($token, ['CHARACTER', 'SET'], true) => 'character_set',
+        $token === 'COLLATE' => 'collation',
+        in_array(strtolower($token), ['bigint', 'int', 'integer', 'smallint', 'tinyint', 'decimal', 'float', 'double',
+            'char', 'varchar', 'text', 'longtext', 'mediumtext', 'tinytext', 'json', 'timestamp', 'datetime',
+            'date', 'time', 'binary', 'varbinary', 'blob', 'enum', 'set'], true) => 'data_type',
+        in_array($token, ['NOT', 'NULL'], true) => 'nullability',
+        $token === 'DEFAULT' => 'default',
+        in_array($token, ['GENERATED', 'ALWAYS', 'AS', 'VIRTUAL', 'STORED'], true) => 'generated',
+        $token === 'AUTO_INCREMENT' => 'auto_increment',
+        in_array($token, ['VISIBLE', 'INVISIBLE'], true) => 'visibility',
+        $token === 'COMMENT' => 'comment',
+        in_array($token, ['(', ')', ',', '=', '+', '-', '*', '/', '.', '<', '>', '!'], true) => 'symbol',
+        default => 'attribute',
+    };
+}
+
+/** Safe first differing declaration; all underlying SQL and metadata stay private. */
+function columnDifference(string $table, array $left, array $right): ?array
+{
+    $before = $left['parts']['definition_columns'];
+    $after = $right['parts']['definition_columns'];
+    $leftNames = parsedColumnNames($left);
+    $rightNames = parsedColumnNames($right);
+    for ($i = 0; $i < max(count($before), count($after)); $i++) {
+        $a = $before[$i] ?? [];
+        $b = $after[$i] ?? [];
+        if ($a === $b) {
+            continue;
+        }
+        $fieldA = $left['fields'][$i] ?? [];
+        $fieldB = $right['fields'][$i] ?? [];
+        $aligned = columnsMatchMetadata($left) && columnsMatchMetadata($right);
+        $checks = ['tokens_equal' => false, 'parser_metadata_before' => columnsMatchMetadata($left),
+            'parser_metadata_after' => columnsMatchMetadata($right), 'column_order' => $leftNames === $rightNames,
+            'metadata_equal' => $fieldA !== [] && $fieldA === $fieldB];
+        foreach (['ordinal' => 'ORDINAL_POSITION', 'data_type' => 'COLUMN_TYPE', 'default' => 'COLUMN_DEFAULT',
+            'nullability' => 'IS_NULLABLE', 'extra' => 'EXTRA', 'character_set' => 'CHARACTER_SET_NAME',
+            'collation' => 'COLLATION_NAME', 'generation' => 'GENERATION_EXPRESSION'] as $name => $key) {
+            $checks[$name] = array_key_exists($key, $fieldA) && array_key_exists($key, $fieldB) && $fieldA[$key] === $fieldB[$key];
+        }
+        $checks['charset_spelling_only'] = $aligned && $checks['metadata_equal']
+            && columnCharsetSpelling($a, $fieldA) === columnCharsetSpelling($b, $fieldB);
+        $spelling = fn ($source) => array_map(fn ($clause, $index) => columnCharsetSpelling($clause, $source['fields'][$index] ?? []),
+            $source['parts']['definition_columns'], array_keys($source['parts']['definition_columns']));
+        $checks['all_columns_charset_spelling'] = $aligned && $left['fields'] === $right['fields']
+            && $spelling($left) === $spelling($right);
+        $j = 0;
+        while (isset($a[$j], $b[$j]) && $a[$j] === $b[$j]) {
+            $j++;
+        }
+        $displayName = fn ($name) => in_array($name, COLUMN_NAMES[$table] ?? [], true) ? $name : null;
+
+        return ['ordinal' => $i + 1, 'before_name' => $displayName($leftNames[$i] ?? null),
+            'after_name' => $displayName($rightNames[$i] ?? null),
+            'before_token_kind' => columnTokenKind($a[$j] ?? null), 'after_token_kind' => columnTokenKind($b[$j] ?? null),
+            'checks' => $checks];
+    }
+
+    return null;
 }
 
 /** Restore must still match every original SHOW CREATE byte and record. */
@@ -237,11 +348,19 @@ function requireRestored(array $before, array $after, PDO $baseline, PDO $restor
     }
     if ($difference['table'] !== null && ($difference['checks']['definition'] ?? true) === false) {
         try {
-            $left = schemaComponents($baseline, $difference['table']);
-            $right = schemaComponents($restored, $difference['table']);
+            $left = schemaComponents($baseline, $difference['table'], $leftSource);
+            $right = schemaComponents($restored, $difference['table'], $rightSource);
             foreach ($left as $name => $hash) {
                 $difference['checks'][$name] = $name === 'definition_parse' ? $hash && $right[$name]
                     : $hash === ($right[$name] ?? null);
+            }
+            if ($difference['checks']['definition_parse'] && ! $difference['checks']['definition_columns']) {
+                $difference['checks']['definition_snapshot_before'] = $before[$difference['table']]['definition'] === hash('sha256', $leftSource['ddl']);
+                $difference['checks']['definition_snapshot_after'] = $after[$difference['table']]['definition'] === hash('sha256', $rightSource['ddl']);
+                $column = columnDifference($difference['table'], $leftSource, $rightSource);
+                if ($column !== null) {
+                    $difference['column'] = $column;
+                }
             }
         } catch (Throwable) {
             // Keep the original failed comparison even if extra diagnostics fail.

@@ -281,6 +281,77 @@ class IncrementalCiSafetyTest(unittest.TestCase):
             self.assertEqual(final['status'], 'FAIL')
             self.assertIn('| definition | false |', summary)
 
+    def column_comparison(self):
+        checks = dict(self.comparison()['checks'], definition_columns=False, definition_clause_set=False,
+                      definition_snapshot_before=True, definition_snapshot_after=True)
+        column_checks = {key: True for key in ci.COLUMN_CHECKS}
+        column_checks['tokens_equal'] = False
+        column = dict(ordinal=4, before_name='actor_role', after_name='actor_role',
+                      before_token_kind='collation', after_token_kind='character_set', checks=column_checks)
+        return dict(table='accommodation_request_events', before_rows=0, after_rows=0, checks=checks, column=column)
+
+    def test_focused_column_diagnostic_survives_cleanup_and_sanitized_summary_without_promoting_failure(self):
+        root = Path(__file__).resolve().parents[2]
+        shell = (root / '.github/scripts/email-verification-incremental-rehearsal.sh').read_text()
+        body = re.findall(r"(?ms)^[ \t]*python3[^\n]*<<'PY'\n(.*?)^PY\s*$", shell)[0]
+        detail = dict(operation='restore_compare', category='validation', runner_phase=None,
+                      mysql_code=None, comparison=self.column_comparison())
+        with tempfile.TemporaryDirectory() as directory:
+            temp = Path(directory)
+            evidence = self.write(temp)
+            helper = temp / 'private-result.json'
+            helper.write_text(json.dumps(dict(status='FAIL', phase='disposable_runner_assertion', diagnostic=detail)))
+            result = subprocess.run([sys.executable, '-B', '-c', body, str(evidence), 'preview_readonly', '1',
+                                     str(helper), 'helper_exit', 'helper'], cwd=root, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 1)
+            self.assertEqual(result.stderr, '')
+            passed, summary = ci.finalize(temp, dict(self.env(), HARNESS_OUTCOME='failure'))
+            self.assertFalse(passed)
+            final = json.loads(self.read_final(temp))
+            self.assertEqual(final['diagnostic'], detail)
+            self.assertEqual(final['passed_scenarios'], 0)
+            self.assertIn('First differing column ordinal: `4`; before: `actor_role`; after: `actor_role`.', summary)
+            self.assertIn('First differing token classes: `collation` / `character_set`.', summary)
+            self.assertIn('| charset_spelling_only | true |', summary)
+            self.assertIn('| all_columns_charset_spelling | true |', summary)
+            for private in ('CREATE TABLE', 'utf8mb4', 'varchar', 'password', 'synthetic-private'):
+                self.assertNotIn(private, summary + self.read_final(temp))
+
+    def test_focused_column_schema_rejects_raw_sql_unreviewed_names_and_invalid_flags(self):
+        original = self.column_comparison()
+        column = original['column']
+        changed_columns = [dict(column, before_name='synthetic-private-name'),
+                           dict(column, after_name='actor_role\nsynthetic-private-value'),
+                           dict(column, ordinal=True), dict(column, ordinal=0), dict(column, ordinal=4097),
+                           dict(column, before_token_kind='CHARACTER SET synthetic-private-value'),
+                           dict(column, raw_sql='synthetic-private-sql'),
+                           dict(column, checks=dict(column['checks'], metadata_equal='synthetic-private-value')),
+                           dict(column, checks=dict(column['checks'], tokens_equal=True)),
+                           dict(column, checks={})]
+        for changed in changed_columns:
+            with self.subTest(column=changed), self.assertRaises(ValueError):
+                ci.validate_comparison(dict(original, column=changed))
+        for changed in (dict(original, table='users'),
+                        dict(original, checks=dict(original['checks'], definition_columns=True)),
+                        dict(original, checks=dict(original['checks'], definition=True)),
+                        dict(original, checks=dict(original['checks'], definition_parse=False))):
+            with self.subTest(comparison=changed), self.assertRaises(ValueError):
+                ci.validate_comparison(changed)
+
+    def test_invalid_column_diagnostic_is_entirely_redacted_and_unknown_names_can_be_null(self):
+        comparison = self.column_comparison()
+        column = comparison['column']
+        ci.validate_comparison(dict(comparison, column=dict(column, before_name=None, after_name=None)))
+        detail = dict(operation='restore_compare', category='validation', runner_phase=None, mysql_code=None,
+                      comparison=dict(comparison, column=dict(column, before_name='synthetic-private-secret')))
+        with tempfile.TemporaryDirectory() as directory:
+            temp = Path(directory)
+            self.write(temp, dict(self.report(), status='FAIL', phase='preview_readonly', checks=[], diagnostic=detail))
+            passed, summary = ci.finalize(temp, dict(self.env(), HARNESS_OUTCOME='failure'))
+            self.assertFalse(passed)
+            self.assertNotIn('synthetic-private', summary + self.read_final(temp))
+            self.assertNotIn('comparison', json.loads(self.read_final(temp)).get('diagnostic', {}))
+
     def test_comparison_schema_rejects_private_names_values_hashes_and_non_boolean_outcomes(self):
         for changed in (dict(self.comparison(), table='synthetic-private-table'),
                         dict(self.comparison(), before_rows='synthetic-private-value'),

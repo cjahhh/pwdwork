@@ -49,6 +49,14 @@ TABLE_NAMES = {'users', 'password_reset_tokens', 'sessions', 'cache', 'cache_loc
                'saved_jobs', 'user_notifications', 'user_reports', 'admin_audit_logs', 'accommodation_requests',
                'accommodation_request_messages', 'accommodation_request_events', 'resumes',
                'resume_application_shares', 'migrations'}
+COLUMN_NAMES = {'accommodation_request_events': {'id', 'accommodation_request_id', 'actor_id', 'actor_role',
+                'action_key', 'action_hash', 'action', 'before_status', 'after_status', 'explanation', 'snapshot',
+                'version', 'created_at', 'updated_at'}}
+COLUMN_CHECKS = {'tokens_equal', 'parser_metadata_before', 'parser_metadata_after', 'column_order',
+                 'metadata_equal', 'ordinal', 'data_type', 'default', 'nullability', 'extra',
+                 'character_set', 'collation', 'generation', 'charset_spelling_only', 'all_columns_charset_spelling'}
+TOKEN_KINDS = {'end', 'identifier', 'literal', 'comment', 'number', 'character_set', 'collation', 'data_type',
+               'nullability', 'default', 'generated', 'auto_increment', 'visibility', 'symbol', 'attribute'}
 COMPARISON_CHECKS = {'table_inventory', 'table_order', 'snapshot_structure', 'definition', 'row_count',
                      'data_fingerprint', 'migration_history', 'primary_key', 'column_definitions',
                      'column_defaults', 'indexes', 'foreign_keys', 'table_options',
@@ -57,7 +65,7 @@ COMPARISON_CHECKS = {'table_inventory', 'table_order', 'snapshot_structure', 'de
                      'definition_columns', 'definition_primary_key', 'definition_indexes',
                      'definition_foreign_keys', 'definition_checks', 'definition_other_clauses',
                      'definition_table_options', 'definition_auto_increment_option',
-                     'definition_fk_default_actions'}
+                     'definition_fk_default_actions', 'definition_snapshot_before', 'definition_snapshot_after'}
 
 
 def demand(condition):
@@ -96,13 +104,28 @@ def load_json(path):
 
 
 def validate_comparison(value):
-    demand(isinstance(value, dict) and set(value) == {'table', 'checks', 'before_rows', 'after_rows'})
+    expected = {'table', 'checks', 'before_rows', 'after_rows'}
+    demand(isinstance(value, dict) and set(value) in (expected, expected | {'column'}))
     demand(value['table'] is None or value['table'] in TABLE_NAMES)
     checks = value['checks']
     demand(isinstance(checks, dict) and bool(checks) and set(checks) <= COMPARISON_CHECKS)
     demand(all(type(outcome) is bool for outcome in checks.values()) and not all(checks.values()))
     for key in ('before_rows', 'after_rows'):
         demand(value[key] is None or (type(value[key]) is int and 0 <= value[key] <= 2**53 - 1))
+    if 'column' in value:
+        demand(checks.get('definition') is False and checks.get('definition_columns') is False
+               and checks.get('definition_parse') is True)
+        column = value['column']
+        demand(isinstance(column, dict) and set(column) == {'ordinal', 'before_name', 'after_name',
+               'before_token_kind', 'after_token_kind', 'checks'})
+        demand(type(column['ordinal']) is int and 1 <= column['ordinal'] <= 4096)
+        for key in ('before_name', 'after_name'):
+            demand(column[key] is None or column[key] in COLUMN_NAMES.get(value['table'], set()))
+        for key in ('before_token_kind', 'after_token_kind'):
+            demand(column[key] in TOKEN_KINDS)
+        demand(isinstance(column['checks'], dict) and set(column['checks']) == COLUMN_CHECKS
+               and all(type(outcome) is bool for outcome in column['checks'].values())
+               and column['checks']['tokens_equal'] is False)
     return dict(value)
 
 
@@ -211,6 +234,13 @@ def finalize(temp, env):
                   f'rows after: `{comparison["after_rows"]}`.', '',
                   '| Comparison category | Equal |', '| --- | --- |']
         lines += [f'| {name} | {str(equal).lower()} |' for name, equal in comparison['checks'].items()]
+        if 'column' in comparison:
+            column = comparison['column']
+            lines += ['', f'First differing column ordinal: `{column["ordinal"]}`; '
+                      f'before: `{column["before_name"]}`; after: `{column["after_name"]}`.',
+                      f'First differing token classes: `{column["before_token_kind"]}` / `{column["after_token_kind"]}`.',
+                      '', '| Column diagnostic | Outcome |', '| --- | --- |']
+            lines += [f'| {name} | {str(outcome).lower()} |' for name, outcome in column['checks'].items()]
     summary = '\n'.join(lines) + '\n'
     (destination / 'summary.md').write_text(summary, encoding='utf-8')
     return passed, summary
